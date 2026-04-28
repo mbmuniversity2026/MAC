@@ -4291,6 +4291,199 @@ async function _nbInitMonacoEditors() {
   });
 }
 
+// ── Fullscreen cell overlay ────────────────────────────────────────────────────
+function _nbOpenFullscreen(cellId) {
+  const cell = _nbState.cells.find(c => c.id === cellId);
+  if (!cell) return;
+
+  const overlay = document.createElement('div');
+  overlay.id = 'nb-fullscreen-overlay';
+  overlay.className = 'nb-fs-overlay';
+
+  const isCode = cell.type !== 'markdown';
+  const lang = NB_LANGUAGES ? NB_LANGUAGES.find(l => l.id === (cell.language || 'python')) : null;
+  const langName = lang ? lang.name : (cell.language || 'Python');
+
+  overlay.innerHTML = `
+    <div class="nb-fs-header">
+      <div class="nb-fs-header-left">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+        <span class="nb-fs-title">${isCode ? langName + ' Cell' : 'Markdown Cell'}</span>
+        ${isCode ? `<select class="nb-lang-select nb-fs-lang-select" id="nb-fs-lang">
+          ${NB_LANGUAGES.map(l => `<option value="${l.id}" ${l.id === (cell.language || 'python') ? 'selected' : ''}>${l.name}</option>`).join('')}
+        </select>` : ''}
+      </div>
+      <div class="nb-fs-header-right">
+        ${isCode ? `<button class="btn btn-sm btn-primary nb-fs-run" id="nb-fs-run-btn">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          Run (Shift+Enter)
+        </button>` : ''}
+        <button class="icon-btn nb-fs-close" id="nb-fs-close-btn" title="Exit fullscreen (Esc)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="10" y1="14" x2="21" y2="3"/><line x1="3" y1="21" x2="14" y2="10"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="nb-fs-body" id="nb-fs-body">
+      ${isCode
+        ? `<div class="nb-fs-editor-wrap" id="nb-fs-editor-wrap"></div>
+           <div class="nb-fs-output-panel" id="nb-fs-output-panel">
+             <div class="nb-output-label">Output</div>
+             <div id="nb-fs-output-content" class="nb-fs-output-content"></div>
+           </div>`
+        : `<div class="nb-fs-md-split">
+             <div class="nb-fs-md-editor-pane">
+               <div class="nb-fs-pane-label">Markdown</div>
+               <textarea class="nb-fs-md-textarea" id="nb-fs-md-input" spellcheck="false">${esc(cell.source || '')}</textarea>
+             </div>
+             <div class="nb-fs-md-preview-pane">
+               <div class="nb-fs-pane-label">Preview</div>
+               <div class="nb-fs-md-preview-content" id="nb-fs-md-preview">${cell.source ? formatMd(cell.source) : '<em style="color:var(--muted)">Start typing to preview...</em>'}</div>
+             </div>
+           </div>`}
+    </div>`;
+
+  document.body.appendChild(overlay);
+  // Prevent body scroll
+  document.body.style.overflow = 'hidden';
+
+  const closeFs = () => {
+    if (fsTempEditor) { try { fsTempEditor.dispose(); } catch(_){} fsTempEditor = null; }
+    overlay.remove();
+    document.body.style.overflow = '';
+    // Re-layout all main editors after closing
+    setTimeout(() => Object.values(_nbEditors).forEach(ed => { try { ed.layout(); } catch(_){} }), 100);
+  };
+
+  overlay.querySelector('#nb-fs-close-btn').onclick = closeFs;
+  const escHandler = (e) => { if (e.key === 'Escape') { closeFs(); document.removeEventListener('keydown', escHandler); } };
+  document.addEventListener('keydown', escHandler);
+
+  let fsTempEditor = null;
+
+  if (isCode) {
+    // Mount Monaco in fullscreen
+    _loadMonaco().then(() => {
+      if (!window.monaco) return;
+      const isDark = document.body.classList.contains('theme-dark') || !document.body.classList.contains('theme-light');
+      const editorWrap = overlay.querySelector('#nb-fs-editor-wrap');
+      fsTempEditor = monaco.editor.create(editorWrap, {
+        value: cell.source || '',
+        language: _getMonacoLang(cell.language || 'python'),
+        theme: isDark ? 'vs-dark' : 'vs',
+        minimap: { enabled: true },
+        scrollBeyondLastLine: false,
+        automaticLayout: true,
+        fontSize: 14,
+        fontFamily: "'JetBrains Mono', 'Fira Code', Consolas, monospace",
+        fontLigatures: true,
+        lineNumbers: 'on',
+        wordWrap: 'off',
+        folding: true,
+        suggest: { showKeywords: true, showSnippets: true },
+        quickSuggestions: { other: true, comments: false, strings: false },
+        acceptSuggestionOnEnter: 'on',
+        tabSize: 4,
+        insertSpaces: true,
+        padding: { top: 12, bottom: 12 },
+        scrollbar: { vertical: 'auto', horizontal: 'auto' },
+      });
+
+      // Sync → cell state + main editor
+      fsTempEditor.onDidChangeModelContent(() => {
+        cell.source = fsTempEditor.getValue();
+        _nbSave();
+        // Also update the main cell editor if it exists
+        const mainEd = _nbEditors[cellId];
+        if (mainEd) {
+          const pos = mainEd.getPosition();
+          mainEd.setValue(cell.source);
+          if (pos) mainEd.setPosition(pos);
+        }
+      });
+
+      // Shift+Enter to run
+      fsTempEditor.addCommand(monaco.KeyMod.Shift | monaco.KeyCode.Enter, () => runFromFs());
+      fsTempEditor.focus();
+
+      // Language selector in fullscreen
+      const fsLangSel = overlay.querySelector('#nb-fs-lang');
+      if (fsLangSel) {
+        fsLangSel.onchange = () => {
+          cell.language = fsLangSel.value;
+          _nbSave();
+          monaco.editor.setModelLanguage(fsTempEditor.getModel(), _getMonacoLang(cell.language));
+          const mainEd = _nbEditors[cellId];
+          if (mainEd && window.monaco) {
+            monaco.editor.setModelLanguage(mainEd.getModel(), _getMonacoLang(cell.language));
+          }
+          // Update the main cell's lang select too
+          const mainSel = document.querySelector(`.nb-lang-select[data-cell="${cellId}"]`);
+          if (mainSel) mainSel.value = cell.language;
+        };
+      }
+
+      // Wire up run button
+      const runFromFs = () => {
+        _nbExecCell(cellId);
+        // Watch for output updates and mirror them in the panel
+        const outputEl = overlay.querySelector('#nb-fs-output-content');
+        _nbWatchOutputFor(cellId, outputEl);
+      };
+      overlay.querySelector('#nb-fs-run-btn')?.addEventListener('click', runFromFs);
+
+      // Show existing output if any
+      const existingOutputs = _nbState.outputs[cellId];
+      if (existingOutputs && existingOutputs.length > 0) {
+        const outputEl = overlay.querySelector('#nb-fs-output-content');
+        outputEl.innerHTML = _nbRenderOutputItems(existingOutputs);
+      }
+    });
+
+  } else {
+    // Markdown fullscreen — live preview
+    const mdInput = overlay.querySelector('#nb-fs-md-input');
+    const mdPreview = overlay.querySelector('#nb-fs-md-preview');
+    mdInput.oninput = () => {
+      cell.source = mdInput.value;
+      _nbSave();
+      mdPreview.innerHTML = cell.source ? formatMd(cell.source) : '<em style="color:var(--muted)">Start typing to preview...</em>';
+      // Update main cell preview
+      const mainPreview = document.querySelector(`.nb-md-preview[data-cell="${cellId}"]`);
+      if (mainPreview) mainPreview.innerHTML = cell.source ? formatMd(cell.source) : '<em class="muted">Click to edit markdown…</em>';
+    };
+    mdInput.focus();
+  }
+}
+
+// Watch for output updates and mirror into a given DOM element
+function _nbWatchOutputFor(cellId, targetEl) {
+  let lastLen = 0;
+  const poll = setInterval(() => {
+    const outputs = _nbState.outputs[cellId] || [];
+    if (outputs.length !== lastLen) {
+      lastLen = outputs.length;
+      targetEl.innerHTML = _nbRenderOutputItems(outputs);
+      targetEl.scrollTop = targetEl.scrollHeight;
+    }
+    // Stop polling when cell finishes executing
+    if (!_nbState.executingCells.has(cellId)) {
+      clearInterval(poll);
+    }
+  }, 100);
+}
+
+// Render output items to HTML string (mirrors _nbRenderCellOutput logic)
+function _nbRenderOutputItems(outputs) {
+  return outputs.map(o => {
+    if (o.type === 'stream') return `<pre class="nb-out-stdout">${esc(o.text || '')}</pre>`;
+    if (o.type === 'error') return `<pre class="nb-out-stderr">${esc(o.text || '')}</pre>`;
+    if (o.type === 'image') return `<img src="${o.data}" style="max-width:100%;border-radius:4px;margin:8px 0">`;
+    if (o.type === 'html') return `<div style="padding:8px">${o.data}</div>`;
+    if (o.type === 'text') return `<pre class="nb-out-stdout">${esc(o.text || '')}</pre>`;
+    return '';
+  }).join('');
+}
+
 // Notebook state
 let _nbState = {
   notebooks: [],
@@ -4646,6 +4839,7 @@ function _nbRenderCell(cell, idx) {
           <div class="nb-cell-actions">
             <button class="icon-btn nb-move-up" data-cell="${cell.id}" title="Move up"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"/></svg></button>
             <button class="icon-btn nb-move-down" data-cell="${cell.id}" title="Move down"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></button>
+            <button class="icon-btn nb-fs-btn" data-cell="${cell.id}" title="Fullscreen (edit markdown)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg></button>
             <button class="icon-btn nb-del-cell" data-cell="${cell.id}" title="Delete"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
           </div>
         </div>
@@ -4678,6 +4872,7 @@ function _nbRenderCell(cell, idx) {
           </button>
           <button class="icon-btn nb-move-up" data-cell="${cell.id}" title="Move up"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"/></svg></button>
           <button class="icon-btn nb-move-down" data-cell="${cell.id}" title="Move down"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></button>
+          <button class="icon-btn nb-fs-btn" data-cell="${cell.id}" title="Fullscreen editor"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg></button>
           <button class="icon-btn nb-del-cell" data-cell="${cell.id}" title="Delete"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
         </div>
       </div>
@@ -4721,9 +4916,15 @@ function _nbBindAll() {
     btn.onclick = (e) => { e.stopPropagation(); if (confirm('Delete this notebook?')) { _nbDelete(btn.dataset.del); renderNotebooks(); } };
   });
 
-  // Sidebar toggle
+  // Sidebar toggle — toggle CSS class only, never re-render (preserves Monaco editors)
   document.querySelectorAll('.nb-sidebar-toggle-main').forEach(btn => {
-    btn.onclick = () => { _nbState.sidebarOpen = !_nbState.sidebarOpen; renderNotebooks(); };
+    btn.onclick = () => {
+      _nbState.sidebarOpen = !_nbState.sidebarOpen;
+      const sidebar = document.querySelector('.nb-sidebar');
+      if (sidebar) sidebar.classList.toggle('collapsed', !_nbState.sidebarOpen);
+      // Tell Monaco to re-measure its container after sidebar resize
+      setTimeout(() => Object.values(_nbEditors).forEach(ed => { try { ed.layout(); } catch(_){} }), 300);
+    };
   });
 
   // Title input
@@ -4787,7 +4988,10 @@ function _nbBindCells() {
     btn.onclick = () => _nbExecCell(btn.dataset.cell);
   });
 
-  // Language selectors
+  // Fullscreen buttons
+  document.querySelectorAll('.nb-fs-btn').forEach(btn => {
+    btn.onclick = () => _nbOpenFullscreen(btn.dataset.cell);
+  });
   document.querySelectorAll('.nb-lang-select').forEach(sel => {
     sel.onchange = () => {
       const cell = _nbState.cells.find(c => c.id === sel.dataset.cell);
