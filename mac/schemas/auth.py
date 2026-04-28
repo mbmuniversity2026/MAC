@@ -126,6 +126,7 @@ class RegistryEntryRequest(BaseModel):
     department: str = Field(default="CSE", max_length=50)
     dob: str = Field(..., examples=["15-08-2003"], description="DD-MM-YYYY")
     batch_year: Optional[int] = None
+    role: str = Field(default="student", pattern="^(student|faculty|admin)$")
 
 
 class BulkRegistryRequest(BaseModel):

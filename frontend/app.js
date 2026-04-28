@@ -164,6 +164,11 @@ function bindEyeToggles(root) {
 function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
   localStorage.setItem('mac_theme', theme);
+  // Sync Monaco editor theme
+  if (window.monaco) {
+    const isDark = theme === 'dark';
+    monaco.editor.setTheme(isDark ? 'vs-dark' : 'vs');
+  }
 }
 
 // Apply saved theme immediately (default: warm)
@@ -176,6 +181,10 @@ function applyTheme(theme) {
 function navigate(page) {
   if (state.user && state.user.must_change_password && page !== 'set-password' && page !== 'login') {
     page = 'set-password';
+  }
+  // Dispose Monaco editors when leaving notebooks page
+  if (state.page === 'notebooks' && page !== 'notebooks') {
+    _nbDisposeEditors();
   }
   state.page = page;
   window.history.pushState({}, '', page === 'login' ? '/' : `#${page}`);
@@ -359,10 +368,18 @@ function shell() {
   const isStudent = u.role === 'student';
   const pages = { dashboard: 'Dashboard', chat: 'Chat', notebooks: 'MBM Book', doubts: 'Doubts', attendance: 'Attendance', copycheck: 'Copy Check', fileshare: 'Shared Files', settings: 'Settings', admin: 'Admin' };
   const dockSide = localStorage.getItem('mac_dock_side') || 'left';
+  const savedW = localStorage.getItem('mac_sidebar_width');
+  const savedH = localStorage.getItem('mac_sidebar_height');
+  const savedCompact = localStorage.getItem('mac_sidebar_compact') === '1';
+  const isHorizDock = dockSide === 'top' || dockSide === 'bottom';
+  const sidebarStyle = isHorizDock
+    ? (savedH ? `style="height:${savedH}px"` : '')
+    : (savedW ? `style="width:${savedW}px"` : '');
+  const sidebarCompactClass = (!isHorizDock && (savedCompact || (savedW && parseInt(savedW) <= 70))) ? ' compact' : '';
   return `
   <div class="shell dock-${dockSide}" id="shell">
     <div class="sidebar-overlay" id="sidebar-overlay"></div>
-    <nav class="sidebar" id="sidebar">
+    <nav class="sidebar${sidebarCompactClass}" id="sidebar" ${sidebarStyle}>
       <div class="sidebar-resize" id="sidebar-resize"></div>
       <div class="sidebar-grip" id="sidebar-grip" title="Drag to dock sidebar to any edge">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="8" cy="6" r="1.5"/><circle cx="16" cy="6" r="1.5"/><circle cx="8" cy="12" r="1.5"/><circle cx="16" cy="12" r="1.5"/><circle cx="8" cy="18" r="1.5"/><circle cx="16" cy="18" r="1.5"/></svg>
@@ -517,6 +534,15 @@ function bindShell() {
         document.removeEventListener('mouseup', onUp);
         document.body.style.cursor = '';
         document.body.style.userSelect = '';
+        const curSide = getCurrentDockSide();
+        if (curSide === 'left' || curSide === 'right') {
+          const w = Math.round(sidebar.getBoundingClientRect().width);
+          localStorage.setItem('mac_sidebar_width', w);
+          localStorage.setItem('mac_sidebar_compact', sidebar.classList.contains('compact') ? '1' : '0');
+        } else {
+          const h = Math.round(sidebar.getBoundingClientRect().height);
+          localStorage.setItem('mac_sidebar_height', h);
+        }
       }
       document.addEventListener('mousemove', onMove);
       document.addEventListener('mouseup', onUp);
@@ -529,13 +555,19 @@ function bindShell() {
         if (w > 70) {
           sidebar.style.width = '52px';
           sidebar.classList.add('compact');
+          localStorage.setItem('mac_sidebar_width', '52');
+          localStorage.setItem('mac_sidebar_compact', '1');
         } else {
           sidebar.style.width = '230px';
           sidebar.classList.remove('compact');
+          localStorage.setItem('mac_sidebar_width', '230');
+          localStorage.setItem('mac_sidebar_compact', '0');
         }
       } else {
         const h = sidebar.getBoundingClientRect().height;
-        sidebar.style.height = (h > 60 ? '42px' : '120px');
+        const newH = h > 60 ? '42' : '120';
+        sidebar.style.height = newH + 'px';
+        localStorage.setItem('mac_sidebar_height', newH);
       }
     };
   }
@@ -601,6 +633,9 @@ function bindShell() {
     sidebar.style.height = '';
     sidebar.classList.remove('compact');
     localStorage.setItem('mac_dock_side', side);
+    localStorage.removeItem('mac_sidebar_width');
+    localStorage.removeItem('mac_sidebar_height');
+    localStorage.removeItem('mac_sidebar_compact');
     // Reset sizes based on side
     if (side === 'left' || side === 'right') {
       sidebar.style.width = '230px';
@@ -1757,7 +1792,7 @@ async function sendAgentMessage(query) {
 /* 
    ADMIN PANEL "" Full Control Dashboard
     */
-let adminTab = 'overview';
+let adminTab = localStorage.getItem('mac_admin_tab') || 'overview';
 
 async function renderAdmin() {
   const el = document.getElementById('page-content');
@@ -1815,7 +1850,7 @@ async function renderAdmin() {
     <div id="admin-content"><div class="loading-state"><div class="spinner"></div><span>Loading...</span></div></div>
   `;
   document.querySelectorAll('#admin-tabs .admin-tab').forEach(t => {
-    t.onclick = () => { adminTab = t.dataset.tab; renderAdmin(); };
+    t.onclick = () => { adminTab = t.dataset.tab; localStorage.setItem('mac_admin_tab', adminTab); renderAdmin(); };
   });
   if (adminTab === 'overview') await renderAdminOverview();
   else if (adminTab === 'users') await renderAdminUsers();
@@ -2215,46 +2250,89 @@ async function renderAdminRegistry() {
   try {
     const data = await apiJson('/auth/admin/registry');
     const entries = data.entries || [];
+    const students = entries.filter(e => (e.role || 'student') === 'student');
+    const faculty = entries.filter(e => e.role === 'faculty');
+    const admins = entries.filter(e => e.role === 'admin');
+
+    const regTab = localStorage.getItem('mac_reg_tab') || 'student';
+
+    function tableRows(list) {
+      if (!list.length) return `<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:24px">No entries</td></tr>`;
+      return list.map(e => `
+        <tr>
+          <td class="mono bold">${esc(e.roll_number)}</td>
+          <td>${esc(e.name)}</td>
+          <td>${esc(e.department)}</td>
+          <td>${esc(e.dob)}</td>
+          <td>${e.batch_year || '-'}</td>
+        </tr>`).join('');
+    }
+
     el.innerHTML = `
       <div class="admin-header">
-        <h2>Student Registry <span class="badge" class="badge-neutral" style="font-size:.75rem;vertical-align:middle">${entries.length}</span></h2>
+        <h2>Registry <span class="badge badge-neutral" style="font-size:.75rem;vertical-align:middle">${entries.length} total</span></h2>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button class="btn btn-sm btn-outline" id="add-reg-btn">+ Add Student</button>
+          <button class="btn btn-sm btn-outline" id="add-reg-btn">+ Add Entry</button>
           <button class="btn btn-sm btn-primary" id="bulk-reg-btn">Bulk Import (JSON)</button>
-          <button class="btn btn-sm btn-primary" id="upload-reg-btn" style="background:var(--accent)">Upload CSV / JSON File</button>
+          <button class="btn btn-sm btn-primary" id="upload-reg-btn" style="background:var(--accent)">Upload CSV / JSON</button>
         </div>
       </div>
-      <p style="font-size:.85rem;color:var(--muted);margin-bottom:16px">College database. Students verify against this to create accounts.</p>
+      <p style="font-size:.85rem;color:var(--muted);margin-bottom:12px">College database — students, faculty and admins verify against this list when creating accounts.</p>
+      <div class="admin-tabs" id="reg-tabs" style="margin-bottom:12px">
+        <div class="admin-tab ${regTab==='student'?'active':''}" data-rtab="student">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+          <span>Students</span> <span class="badge badge-neutral" style="font-size:.7rem">${students.length}</span>
+        </div>
+        <div class="admin-tab ${regTab==='faculty'?'active':''}" data-rtab="faculty">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/><path d="M12 11v4"/><path d="M10 13h4"/></svg>
+          <span>Faculty</span> <span class="badge badge-neutral" style="font-size:.7rem">${faculty.length}</span>
+        </div>
+        <div class="admin-tab ${regTab==='admin'?'active':''}" data-rtab="admin">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          <span>Admins</span> <span class="badge badge-neutral" style="font-size:.7rem">${admins.length}</span>
+        </div>
+      </div>
       <div class="table-responsive">
       <table class="data-table">
-        <thead><tr><th>Roll No</th><th>Name</th><th>Dept</th><th>DOB</th><th>Batch</th></tr></thead>
-        <tbody>
-          ${entries.map(e => `
-            <tr>
-              <td class="mono bold">${esc(e.roll_number)}</td>
-              <td>${esc(e.name)}</td>
-              <td>${esc(e.department)}</td>
-              <td>${esc(e.dob)}</td>
-              <td>${e.batch_year || '-'}</td>
-            </tr>
-          `).join('')}
+        <thead><tr><th>Roll / Email</th><th>Name</th><th>Dept</th><th>DOB</th><th>Batch</th></tr></thead>
+        <tbody id="reg-table-body">
+          ${tableRows(regTab === 'student' ? students : regTab === 'faculty' ? faculty : admins)}
         </tbody>
       </table>
       </div>`;
 
+    // Tab switching (no full reload)
+    el.querySelectorAll('[data-rtab]').forEach(t => {
+      t.onclick = () => {
+        el.querySelectorAll('[data-rtab]').forEach(x => x.classList.remove('active'));
+        t.classList.add('active');
+        localStorage.setItem('mac_reg_tab', t.dataset.rtab);
+        const list = t.dataset.rtab === 'student' ? students : t.dataset.rtab === 'faculty' ? faculty : admins;
+        document.getElementById('reg-table-body').innerHTML = tableRows(list);
+      };
+    });
+
+    // Add Entry modal (with role selector)
     document.getElementById('add-reg-btn').onclick = () => {
       const overlay = document.createElement('div');
       overlay.className = 'modal-overlay';
       overlay.innerHTML = `
         <div class="modal">
-          <h3>Add Student to Registry</h3>
-          <div class="field"><label>Roll Number</label><input id="rg-roll" placeholder="e.g. 23CS050"></div>
-          <div class="field"><label>Name</label><input id="rg-name" placeholder="Full name"></div>
+          <h3>Add Registry Entry</h3>
+          <div class="field"><label>Role</label>
+            <select id="rg-role">
+              <option value="student">Student</option>
+              <option value="faculty">Faculty</option>
+              <option value="admin">Admin</option>
+            </select>
+          </div>
+          <div class="field"><label>Roll No / Employee ID / Email</label><input id="rg-roll" placeholder="e.g. 23CS050 or prof@mbm.ac.in"></div>
+          <div class="field"><label>Full Name</label><input id="rg-name" placeholder="Full name"></div>
           <div class="field"><label>Department</label>
             <select id="rg-dept"><option>CSE</option><option>ECE</option><option>ME</option><option>CE</option><option>EE</option><option>Other</option></select>
           </div>
-          <div class="field"><label>Date of Birth (DD-MM-YYYY)</label><input id="rg-dob" placeholder="15-08-2004" maxlength="10"></div>
-          <div class="field"><label>Batch Year</label><input id="rg-batch" type="number" placeholder="2023"></div>
+          <div class="field"><label>Date of Birth (DD-MM-YYYY)</label><input id="rg-dob" placeholder="15-08-1990" maxlength="10"></div>
+          <div class="field"><label>Batch / Join Year</label><input id="rg-batch" type="number" placeholder="2021"></div>
           <div id="rg-error" style="color:var(--danger);font-size:.85rem;min-height:20px"></div>
           <div class="modal-actions">
             <button class="btn btn-sm btn-outline" id="rg-cancel">Cancel</button>
@@ -2273,8 +2351,9 @@ async function renderAdminRegistry() {
           department: overlay.querySelector('#rg-dept').value,
           dob: overlay.querySelector('#rg-dob').value.trim(),
           batch_year: parseInt(overlay.querySelector('#rg-batch').value) || null,
+          role: overlay.querySelector('#rg-role').value,
         };
-        if (!body.roll_number || !body.name || !body.dob) { err.textContent = 'All fields except batch required'; return; }
+        if (!body.roll_number || !body.name || !body.dob) { err.textContent = 'Roll No, Name, and DOB are required'; return; }
         try {
           const r = await api('/auth/admin/registry', { method: 'POST', body: JSON.stringify(body) });
           if (!r.ok) { const d = await r.json(); err.textContent = d.detail?.message || 'Failed'; return; }
@@ -2288,9 +2367,9 @@ async function renderAdminRegistry() {
       overlay.className = 'modal-overlay';
       overlay.innerHTML = `
         <div class="modal">
-          <h3>Bulk Import Students</h3>
-          <p style="font-size:.85rem;color:var(--muted);margin-bottom:12px">Paste JSON array. Each: <code>{ roll_number, name, department, dob, batch_year }</code></p>
-          <textarea id="bulk-json" rows="8" style="width:100%;font-family:monospace;font-size:.8rem" placeholder='[{"roll_number":"23CS001","name":"Name","department":"CSE","dob":"10-05-2005","batch_year":2023}]'></textarea>
+          <h3>Bulk Import</h3>
+          <p style="font-size:.85rem;color:var(--muted);margin-bottom:12px">Paste JSON array. Each: <code>{ roll_number, name, department, dob, batch_year, role }</code><br>role is optional — defaults to <code>"student"</code></p>
+          <textarea id="bulk-json" rows="8" style="width:100%;font-family:monospace;font-size:.8rem" placeholder='[{"roll_number":"23CS001","name":"Aaryan Rajput","department":"CSE","dob":"10-05-2005","batch_year":2023,"role":"student"},{"roll_number":"prof.raj@mbm.ac.in","name":"Dr. Raj Kumar","department":"CSE","dob":"15-06-1985","batch_year":2010,"role":"faculty"}]'></textarea>
           <div id="bulk-error" style="color:var(--danger);font-size:.85rem;min-height:20px;margin-top:8px"></div>
           <div id="bulk-result" style="font-size:.85rem;min-height:20px;margin-top:4px"></div>
           <div class="modal-actions">
@@ -2307,7 +2386,7 @@ async function renderAdminRegistry() {
         err.textContent = ''; res.textContent = '';
         let students;
         try { students = JSON.parse(overlay.querySelector('#bulk-json').value); } catch { err.textContent = 'Invalid JSON'; return; }
-        if (!Array.isArray(students)) { err.textContent = 'Must be array'; return; }
+        if (!Array.isArray(students)) { err.textContent = 'Must be a JSON array'; return; }
         try {
           const r = await apiJson('/auth/admin/registry/bulk', { method: 'POST', body: JSON.stringify({ students }) });
           res.innerHTML = `<span style="color:var(--success)">${esc(r.message)}</span>` +
@@ -2321,11 +2400,11 @@ async function renderAdminRegistry() {
       overlay.className = 'modal-overlay';
       overlay.innerHTML = `
         <div class="modal">
-          <h3>Upload Student List (CSV or JSON)</h3>
-          <p style="font-size:.85rem;color:var(--muted);margin-bottom:8px">CSV columns: <code>roll_number, name, department, dob, batch_year</code></p>
+          <h3>Upload Registry File (CSV or JSON)</h3>
+          <p style="font-size:.85rem;color:var(--muted);margin-bottom:8px">CSV columns: <code>roll_number, name, department, dob, batch_year, role</code></p>
           <p style="font-size:.85rem;color:var(--muted);margin-bottom:12px">JSON: array of objects or <code>{"students": [...]}</code></p>
-          <div class="copycheck-upload-area" id="reg-file-drop" style="padding:32px;text-align:center;border:2px dashed var(--border);border-radius:8px;cursor:pointer;margin-bottom:12px">
-            <p style="margin:0;font-size:.95rem">Drag & drop or click to select file</p>
+          <div style="padding:32px;text-align:center;border:2px dashed var(--border);border-radius:8px;cursor:pointer;margin-bottom:12px" id="reg-file-drop">
+            <p style="margin:0;font-size:.95rem">Drag &amp; drop or click to select</p>
             <p style="margin:4px 0 0;font-size:.8rem;color:var(--muted)">.csv or .json (max 5MB)</p>
             <input type="file" id="reg-file-input" accept=".csv,.json" style="display:none">
           </div>
@@ -2341,13 +2420,11 @@ async function renderAdminRegistry() {
       const fileInput = overlay.querySelector('#reg-file-input');
       const dropArea = overlay.querySelector('#reg-file-drop');
       let selectedFile = null;
-
       dropArea.onclick = () => fileInput.click();
-      dropArea.ondragover = (e) => { e.preventDefault(); dropArea.classList.add('dragover'); };
-      dropArea.ondragleave = () => dropArea.classList.remove('dragover');
-      dropArea.ondrop = (e) => { e.preventDefault(); dropArea.classList.remove('dragover'); if (e.dataTransfer.files[0]) pickFile(e.dataTransfer.files[0]); };
+      dropArea.ondragover = (e) => { e.preventDefault(); dropArea.style.borderColor = 'var(--accent)'; };
+      dropArea.ondragleave = () => { dropArea.style.borderColor = 'var(--border)'; };
+      dropArea.ondrop = (e) => { e.preventDefault(); dropArea.style.borderColor = 'var(--border)'; if (e.dataTransfer.files[0]) pickFile(e.dataTransfer.files[0]); };
       fileInput.onchange = () => { if (fileInput.files[0]) pickFile(fileInput.files[0]); };
-
       function pickFile(f) {
         if (!f.name.match(/\.(csv|json)$/i)) { overlay.querySelector('#reg-upload-error').textContent = 'Only .csv or .json files'; return; }
         if (f.size > 5*1024*1024) { overlay.querySelector('#reg-upload-error').textContent = 'File too large (max 5MB)'; return; }
@@ -2356,7 +2433,6 @@ async function renderAdminRegistry() {
         overlay.querySelector('#reg-upload-error').textContent = '';
         overlay.querySelector('#reg-upload-submit').disabled = false;
       }
-
       overlay.querySelector('#reg-upload-cancel').onclick = () => overlay.remove();
       overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
       overlay.querySelector('#reg-upload-submit').onclick = async () => {
@@ -2375,16 +2451,18 @@ async function renderAdminRegistry() {
             headers: tok ? { 'Authorization': 'Bearer ' + tok } : {},
             body: form,
           });
-          const data = await r.json();
-          if (!r.ok) { err.textContent = data.detail || 'Upload failed'; res.textContent = ''; submitBtn.disabled = false; return; }
-          res.innerHTML = '<span style="color:var(--success)">' + esc(data.message) + '</span>' +
-            (data.errors?.length ? '<br><span style="color:var(--danger)">Errors: ' + data.errors.join(', ') + '</span>' : '');
+          const d = await r.json();
+          if (!r.ok) { err.textContent = d.detail || 'Upload failed'; res.textContent = ''; submitBtn.disabled = false; return; }
+          res.innerHTML = '<span style="color:var(--success)">' + esc(d.message) + '</span>' +
+            (d.errors?.length ? '<br><span style="color:var(--danger)">Errors: ' + d.errors.join(', ') + '</span>' : '');
           setTimeout(() => { overlay.remove(); renderAdmin(); }, 2000);
         } catch (ex) { err.textContent = ex.message; res.textContent = ''; submitBtn.disabled = false; }
       };
     };
   } catch (ex) { el.innerHTML = `<div class="error-state"><p>Error: ${esc(ex.message)}</p></div>`; }
 }
+
+
 
 /* 
    ADMIN "" Cluster / Nodes Management
@@ -4089,6 +4167,130 @@ function fileToBase64(file) {
    NOTEBOOKS "" Full IDE (Colab-style)
     */
 
+// ── Monaco Editor integration ─────────────────────────────────────────────────
+let _nbEditors = {};        // cellId → monaco editor instance
+let _monacoPromise = null;  // singleton load promise
+
+function _getMonacoLang(lang) {
+  const map = {
+    python: 'python', javascript: 'javascript', typescript: 'typescript',
+    c: 'c', cpp: 'cpp', java: 'java', go: 'go', rust: 'rust',
+    csharp: 'csharp', ruby: 'ruby', php: 'php', lua: 'lua',
+    bash: 'shell', sql: 'sql', html: 'html', css: 'css',
+    kotlin: 'kotlin', scala: 'scala', swift: 'swift',
+    r: 'r', julia: 'julia', markdown: 'markdown',
+  };
+  return map[lang] || 'plaintext';
+}
+
+function _loadMonaco() {
+  if (_monacoPromise) return _monacoPromise;
+  _monacoPromise = new Promise((resolve) => {
+    if (window.monaco) { resolve(); return; }
+    if (!window.require) {
+      // AMD loader not available — fallback
+      console.warn('[MAC] Monaco AMD loader not found. Using textarea fallback.');
+      resolve();
+      return;
+    }
+    require.config({ paths: { 'vs': 'https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs' } });
+    require(['vs/editor/editor.main'], () => resolve());
+  });
+  return _monacoPromise;
+}
+
+function _nbDisposeEditors() {
+  for (const [id, ed] of Object.entries(_nbEditors)) {
+    try { ed.dispose(); } catch (_) {}
+  }
+  _nbEditors = {};
+}
+
+function _nbDisposeEditor(cellId) {
+  if (_nbEditors[cellId]) {
+    try { _nbEditors[cellId].dispose(); } catch (_) {}
+    delete _nbEditors[cellId];
+  }
+}
+
+async function _nbInitMonacoEditors() {
+  await _loadMonaco();
+  if (!window.monaco) return; // fallback: textareas stay as-is
+
+  const isDark = document.body.classList.contains('theme-dark') || !document.body.classList.contains('theme-light');
+  const monacoTheme = isDark ? 'vs-dark' : 'vs';
+
+  document.querySelectorAll('.nb-code-editor[data-cell]').forEach(textarea => {
+    const cellId = textarea.dataset.cell;
+    if (_nbEditors[cellId]) return; // already mounted
+
+    const cell = _nbState.cells.find(c => c.id === cellId);
+    if (!cell) return;
+
+    const lineCount = Math.max(4, (cell.source || '').split('\n').length);
+
+    // Build a container to replace the textarea
+    const container = document.createElement('div');
+    container.className = 'nb-monaco-container';
+    container.dataset.cell = cellId;
+    container.style.height = Math.max(96, lineCount * 20 + 24) + 'px';
+    textarea.parentNode.replaceChild(container, textarea);
+
+    const editor = monaco.editor.create(container, {
+      value: cell.source || '',
+      language: _getMonacoLang(cell.language || 'python'),
+      theme: monacoTheme,
+      minimap: { enabled: false },
+      scrollBeyondLastLine: false,
+      automaticLayout: true,
+      fontSize: 13,
+      fontFamily: "'JetBrains Mono', 'Fira Code', Consolas, monospace",
+      fontLigatures: true,
+      lineNumbers: 'on',
+      glyphMargin: false,
+      folding: true,
+      lineDecorationsWidth: 4,
+      lineNumbersMinChars: 3,
+      roundedSelection: true,
+      wordWrap: 'off',
+      suggest: { showKeywords: true, showSnippets: true },
+      quickSuggestions: { other: true, comments: false, strings: false },
+      acceptSuggestionOnEnter: 'on',
+      tabSize: 4,
+      insertSpaces: true,
+      padding: { top: 8, bottom: 8 },
+      scrollbar: { vertical: 'auto', horizontal: 'auto', alwaysConsumeMouseWheel: false },
+      overviewRulerLanes: 0,
+      hideCursorInOverviewRuler: true,
+      contextmenu: true,
+    });
+
+    // Sync content → state
+    editor.onDidChangeModelContent(() => {
+      const c = _nbState.cells.find(c => c.id === cellId);
+      if (c) { c.source = editor.getValue(); _nbSave(); }
+      // Auto-resize height
+      const lines = editor.getModel().getLineCount();
+      const newH = Math.max(96, lines * 20 + 24);
+      container.style.height = newH + 'px';
+      editor.layout();
+    });
+
+    // Shift+Enter → run cell
+    editor.addCommand(monaco.KeyMod.Shift | monaco.KeyCode.Enter, () => {
+      _nbExecCell(cellId);
+    });
+
+    // Ctrl+/ → toggle comment (built-in, but ensure it works)
+    // Escape → blur editor
+    editor.addCommand(monaco.KeyCode.Escape, () => {
+      editor.blur();
+    });
+
+    _nbEditors[cellId] = editor;
+  });
+}
+
 // Notebook state
 let _nbState = {
   notebooks: [],
@@ -4351,9 +4553,6 @@ function renderNotebooks() {
     <div class="nb-sidebar ${_nbState.sidebarOpen ? '' : 'collapsed'}">
       <div class="nb-sidebar-header">
         <span class="nb-sidebar-title">Explorer</span>
-        <button class="icon-btn nb-sidebar-toggle" title="Toggle sidebar">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
-        </button>
       </div>
       <button class="btn btn-sm btn-primary nb-new-btn" style="margin:8px 12px;width:calc(100% - 24px)">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -4412,6 +4611,8 @@ function renderNotebooks() {
 
   _nbBindAll();
   if (_nbState.current) _nbConnectWs();
+  // Initialize Monaco editors after DOM is ready
+  _nbInitMonacoEditors();
 }
 
 function _nbRenderAllCells() {
@@ -4489,12 +4690,16 @@ function _nbRenderCell(cell, idx) {
 function _nbRefreshCells() {
   const container = document.getElementById('nb-cells');
   if (!container) return;
+  // Dispose Monaco editors before rebuilding DOM
+  _nbDisposeEditors();
   container.innerHTML = _nbRenderAllCells();
   _nbBindCells();
   // Re-render outputs
   for (const cellId of Object.keys(_nbState.outputs)) {
     _nbRenderCellOutput(cellId);
   }
+  // Re-init Monaco
+  _nbInitMonacoEditors();
 }
 
 function _nbBindAll() {
@@ -4517,7 +4722,7 @@ function _nbBindAll() {
   });
 
   // Sidebar toggle
-  document.querySelectorAll('.nb-sidebar-toggle, .nb-sidebar-toggle-main').forEach(btn => {
+  document.querySelectorAll('.nb-sidebar-toggle-main').forEach(btn => {
     btn.onclick = () => { _nbState.sidebarOpen = !_nbState.sidebarOpen; renderNotebooks(); };
   });
 
@@ -4549,9 +4754,11 @@ function _nbBindAll() {
 }
 
 function _nbBindCells() {
-  // Code editors - auto-resize and save
+  // Code editors - auto-resize and save (textarea fallback when Monaco not loaded)
   document.querySelectorAll('.nb-code-editor').forEach(ta => {
     const cellId = ta.dataset.cell;
+    // Skip if Monaco editor is already mounted for this cell
+    if (_nbEditors[cellId]) return;
     ta.oninput = () => {
       const cell = _nbState.cells.find(c => c.id === cellId);
       if (cell) { cell.source = ta.value; _nbSave(); }
@@ -4584,7 +4791,15 @@ function _nbBindCells() {
   document.querySelectorAll('.nb-lang-select').forEach(sel => {
     sel.onchange = () => {
       const cell = _nbState.cells.find(c => c.id === sel.dataset.cell);
-      if (cell) { cell.language = sel.value; _nbSave(); }
+      if (cell) {
+        cell.language = sel.value;
+        _nbSave();
+        // Update Monaco language if editor exists
+        const ed = _nbEditors[cell.id];
+        if (ed && window.monaco) {
+          monaco.editor.setModelLanguage(ed.getModel(), _getMonacoLang(cell.language));
+        }
+      }
     };
   });
 
@@ -4647,8 +4862,11 @@ function _nbBindCells() {
   // Delete cell
   document.querySelectorAll('.nb-del-cell').forEach(btn => {
     btn.onclick = () => {
-      _nbState.cells = _nbState.cells.filter(c => c.id !== btn.dataset.cell);
-      delete _nbState.outputs[btn.dataset.cell];
+      const cellId = btn.dataset.cell;
+      // Dispose Monaco editor before removing cell
+      _nbDisposeEditor(cellId);
+      _nbState.cells = _nbState.cells.filter(c => c.id !== cellId);
+      delete _nbState.outputs[cellId];
       _nbSave();
       _nbRefreshCells();
     };

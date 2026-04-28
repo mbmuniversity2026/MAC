@@ -21,7 +21,7 @@ def _gen_api_key():
 
 
 class StudentRegistry(Base):
-    """Pre‑loaded college registry — only students whose roll numbers exist
+    """Pre‑loaded college registry — students, faculty, and admins whose entries
     here are allowed to sign up.  Admins bulk‑import this data."""
     __tablename__ = "student_registry"
 
@@ -31,6 +31,7 @@ class StudentRegistry(Base):
     department: Mapped[str] = mapped_column(String(20), nullable=False, default="CSE")
     dob: Mapped[date] = mapped_column(Date, nullable=False)          # DD‑MM‑YYYY at entry
     batch_year: Mapped[int] = mapped_column(Integer, nullable=True)   # e.g. 2021
+    role: Mapped[str] = mapped_column(String(20), nullable=False, default="student")  # student | faculty | admin
 
 
 class User(Base):

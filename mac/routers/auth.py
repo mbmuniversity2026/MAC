@@ -67,7 +67,7 @@ async def verify(body: VerifyRequest, db: AsyncSession = Depends(get_db)):
             name=entry.name,
             password="__dob_temp__",  # placeholder, must_change_password=True forces reset
             department=entry.department,
-            role="student",
+            role=getattr(entry, 'role', 'student') or 'student',
             must_change_password=True,
         )
 
@@ -408,12 +408,13 @@ async def list_registry(
     db: AsyncSession = Depends(get_db),
 ):
     """List all student registry entries."""
-    result = await db.execute(select(StudentRegistry).order_by(StudentRegistry.roll_number))
+    result = await db.execute(select(StudentRegistry).order_by(StudentRegistry.role, StudentRegistry.roll_number))
     entries = result.scalars().all()
     return {
         "entries": [
             {"id": e.id, "roll_number": e.roll_number, "name": e.name,
-             "department": e.department, "dob": e.dob.isoformat(), "batch_year": e.batch_year}
+             "department": e.department, "dob": e.dob.isoformat(), "batch_year": e.batch_year,
+             "role": getattr(e, 'role', 'student')}
             for e in entries
         ],
         "total": len(entries),
@@ -444,10 +445,11 @@ async def add_registry_entry(
     if existing:
         raise HTTPException(status_code=409, detail={"code": "conflict", "message": "Roll number already in registry"})
 
-    entry = StudentRegistry(roll_number=roll, name=name, department=dept, dob=dob, batch_year=batch)
+    role = getattr(body, 'role', 'student') or 'student'
+    entry = StudentRegistry(roll_number=roll, name=name, department=dept, dob=dob, batch_year=batch, role=role)
     db.add(entry)
     await db.commit()
-    return {"message": f"Registry entry for {roll} added"}
+    return {"message": f"Registry entry for {roll} added as {role}"}
 
 
 @router.post("/admin/registry/bulk")
@@ -479,7 +481,7 @@ async def bulk_add_registry(
         if existing:
             errors.append(f"{roll}: already exists")
             continue
-        db.add(StudentRegistry(roll_number=roll, name=name, department=dept, dob=dob, batch_year=batch))
+        db.add(StudentRegistry(roll_number=roll, name=name, department=dept, dob=dob, batch_year=batch, role=getattr(s, 'role', 'student') or 'student'))
         added += 1
     await db.commit()
     return {"message": f"{added} students added", "errors": errors}
