@@ -1,0 +1,266 @@
+# ═══════════════════════════════════════════════════════════
+#  MAC — MBM AI Cloud  |  Local Server Setup (12GB GPU)
+# ═══════════════════════════════════════════════════════════
+#  RTX 3060 12GB VRAM — single model at a time strategy.
+#  GPU: Qwen2.5-7B chat/code      ~ 5GB (gpu_memory_utilization=0.45)
+#  CPU: Whisper STT + Piper TTS   ~ 1.5GB RAM (no VRAM)
+#  Infra: PostgreSQL + Redis + Nginx + Qdrant + SearXNG
+# ═══════════════════════════════════════════════════════════
+
+services:
+
+  # ── MAC API Server ──────────────────────────────────────
+  mac:
+    build: .
+    container_name: mac-api
+    ports:
+      - "${APP_HOST:-0.0.0.0}:8001:8000"
+    env_file: .env
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://mac:mac_password@postgres:5432/mac_db
+      - REDIS_URL=redis://redis:6379/0
+      - VLLM_BASE_URL=http://vllm-speed:8001
+      - VLLM_SPEED_URL=http://vllm-speed:8001
+      - VLLM_CODE_URL=http://vllm-speed:8001
+      - VLLM_REASONING_URL=http://vllm-speed:8001
+      - VLLM_INTELLIGENCE_URL=http://vllm-speed:8001
+      - WHISPER_URL=http://whisper:8000
+      - TTS_URL=http://tts:8000
+      - EMBEDDING_URL=http://vllm-speed:8001
+      - QDRANT_URL=http://qdrant:6333
+      - SEARXNG_URL=http://searxng:8080
+      - MAC_ENABLED_MODELS=qwen2.5:7b,whisper-small,tts-piper
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    restart: unless-stopped
+    networks:
+      - mac-net
+
+  # ═══════════════════════════════════════════════════════
+  #  vLLM GPU INFERENCE — Single model for 12GB GPU
+  # ═══════════════════════════════════════════════════════
+
+  # ── Speed Model: Qwen2.5-7B (handles ALL chat/code/general) ──
+  vllm-speed:
+    image: vllm/vllm-openai:latest
+    container_name: mac-vllm-speed
+    ports:
+      - "${VLLM_SPEED_PORT:-8001}:${VLLM_SPEED_PORT:-8001}"
+    environment:
+      - HF_HOME=/root/.cache/huggingface
+    volumes:
+      - hf-cache:/root/.cache/huggingface
+    command: >
+      --model ${VLLM_SPEED_MODEL:-Qwen/Qwen2.5-7B-Instruct-AWQ}
+      --port ${VLLM_SPEED_PORT:-8001}
+      --gpu-memory-utilization 0.85
+      --max-model-len 8192
+      --trust-remote-code
+      --enforce-eager
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    restart: unless-stopped
+    networks:
+      - mac-net
+
+  # ── Code/Reasoning/Intelligence models DISABLED (12GB GPU) ──
+  # Uncomment when upgrading to 24GB+ GPU
+  # vllm-code:
+  #   ...
+  # vllm-reason:
+  #   ...
+  # vllm-intel:
+  #   ...
+
+  # ═══════════════════════════════════════════════════════
+  #  SPEECH & AUDIO SERVICES (CPU — saves GPU for LLM)
+  # ═══════════════════════════════════════════════════════
+
+  # ── Whisper — Speech-to-Text (CPU mode) ────────────────
+  whisper:
+    image: fedirz/faster-whisper-server:latest-cpu
+    container_name: mac-whisper
+    ports:
+      - "${WHISPER_PORT:-8005}:8000"
+    environment:
+      - WHISPER__MODEL=${WHISPER_MODEL:-Systran/faster-whisper-small}
+      - WHISPER__DEVICE=cpu
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    restart: unless-stopped
+    networks:
+      - mac-net
+
+  # ── Piper TTS — Text-to-Speech (CPU, lightweight) ─────
+  # TEMPORARILY DISABLED — image still downloading on slow WiFi
+  # tts:
+  #   image: ghcr.io/matatonic/openedai-speech:latest
+  #   container_name: mac-tts
+  #   ports:
+  #     - "${TTS_PORT:-8006}:8000"
+  #   volumes:
+  #     - tts-voices:/app/voices
+  #   restart: unless-stopped
+  #   networks:
+  #     - mac-net
+
+  # ═══════════════════════════════════════════════════════
+  #  INFRASTRUCTURE SERVICES
+  # ═══════════════════════════════════════════════════════
+
+  # ── PostgreSQL — Persistent data store ─────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: mac-postgres
+    environment:
+      POSTGRES_USER: mac
+      POSTGRES_PASSWORD: mac_password
+      POSTGRES_DB: mac_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mac -d mac_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    restart: unless-stopped
+    networks:
+      - mac-net
+
+  # ── pgAdmin — PostgreSQL admin UI (local-only by default) ──
+  pgadmin:
+    image: dpage/pgadmin4:8
+    container_name: mac-pgadmin
+    ports:
+      - "127.0.0.1:${PGADMIN_PORT:-5051}:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@mbm.ac.in}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-ChangeThisStrongPassword!}
+      PGADMIN_CONFIG_ENHANCED_COOKIE_PROTECTION: "True"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+    restart: unless-stopped
+    networks:
+      - mac-net
+
+  # ── Redis — Rate limiting & caching ────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: mac-redis
+    ports:
+      - "6380:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    restart: unless-stopped
+    networks:
+      - mac-net
+
+  # ── Nginx — Reverse proxy + SvelteKit frontend ─────────
+  nginx:
+    image: nginx:alpine
+    container_name: mac-nginx
+    ports:
+      - "${APP_HOST:-0.0.0.0}:${APP_PORT:-80}:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./frontend:/app:ro               # Vanilla JS frontend (no build step)
+    depends_on:
+      - mac
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    restart: unless-stopped
+    networks:
+      - mac-net
+
+  # ── Qdrant — Vector DB for RAG ─────────────────────────
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: mac-qdrant
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrantdata:/qdrant/storage
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    restart: unless-stopped
+    networks:
+      - mac-net
+
+  # ── SearXNG — Self-hosted web search ───────────────────
+  searxng:
+    image: searxng/searxng:latest
+    container_name: mac-searxng
+    ports:
+      - "8888:8080"
+    environment:
+      - SEARXNG_BASE_URL=http://localhost:8888/
+    volumes:
+      - searxngdata:/etc/searxng
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    restart: unless-stopped
+    networks:
+      - mac-net
+
+volumes:
+  pgdata:
+  pgadmin-data:
+  redisdata:
+  qdrantdata:
+  searxngdata:
+  hf-cache:      # Shared HuggingFace model cache across all vLLM instances
+  tts-voices:    # Persisted TTS voice models
+
+networks:
+  mac-net:
+    driver: bridge

@@ -1,0 +1,104 @@
+# ═══════════════════════════════════════════════════════════
+#  MAC Worker Node — run this on each worker PC
+#  Worker PCs run: vLLM (GPU inference) + optional Jupyter
+#  PostgreSQL/Redis/Nginx stay on the master node only.
+#
+#  Steps:
+#    1. Copy this file + worker_agent.py to the worker PC
+#    2. Create .env.worker with MAC_ENROLL_TOKEN and MAC_MASTER_URL
+#    3. docker compose -f docker-compose.worker.yml up -d
+#    4. Admin approves the node in the MAC cluster panel
+# ═══════════════════════════════════════════════════════════
+
+services:
+
+  # ── vLLM GPU Inference ─────────────────────────────────────
+  vllm:
+    image: vllm/vllm-openai:latest
+    container_name: mac-worker-vllm
+    ports:
+      - "${VLLM_PORT:-8001}:8001"
+    environment:
+      - HF_HOME=/root/.cache/huggingface
+      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
+    volumes:
+      - hf-cache:/root/.cache/huggingface
+    command: >
+      --model ${VLLM_MODEL:-Qwen/Qwen2.5-7B-Instruct-AWQ}
+      --port ${VLLM_PORT:-8001}
+      --gpu-memory-utilization ${VLLM_GPU_MEM:-0.85}
+      --max-model-len ${VLLM_MAX_LEN:-8192}
+      --trust-remote-code
+      --enforce-eager
+      --served-model-name ${VLLM_SERVED_NAME:-Qwen/Qwen2.5-7B-Instruct-AWQ}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+    networks:
+      - worker-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:${VLLM_PORT:-8001}/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+
+  # ── Jupyter Kernel Gateway (optional — for notebook offload) ──
+  # Enable by setting ENABLE_NOTEBOOK=1 in .env.worker
+  jupyter:
+    image: jupyter/scipy-notebook:latest
+    container_name: mac-worker-jupyter
+    ports:
+      - "${NOTEBOOK_PORT:-8888}:8888"
+    environment:
+      - JUPYTER_ENABLE_LAB=no
+    command: >
+      jupyter kernelgateway
+      --KernelGatewayApp.ip=0.0.0.0
+      --KernelGatewayApp.port=8888
+      --KernelGatewayApp.allow_origin=*
+      --KernelGatewayApp.auth_token=${JUPYTER_TOKEN:-mac-notebook-token}
+    volumes:
+      - notebooks:/home/jovyan/work
+    restart: unless-stopped
+    networks:
+      - worker-net
+    profiles:
+      - notebook   # only starts with: docker compose --profile notebook up
+
+  # ── Worker Agent ───────────────────────────────────────────
+  worker-agent:
+    image: python:3.11-slim
+    container_name: mac-worker-agent
+    working_dir: /app
+    volumes:
+      - ./worker_agent.py:/app/worker_agent.py:ro
+    command: >
+      sh -c "pip install --quiet httpx psutil pynvml && python worker_agent.py"
+    environment:
+      - MAC_MASTER_URL=${MAC_MASTER_URL}
+      - MAC_ENROLL_TOKEN=${MAC_ENROLL_TOKEN:-}
+      - MAC_NODE_TOKEN=${MAC_NODE_TOKEN:-}
+      - MAC_WORKER_NAME=${MAC_WORKER_NAME:-Worker}
+      - MAC_VLLM_PORT=${VLLM_PORT:-8001}
+      - MAC_NOTEBOOK_PORT=${NOTEBOOK_PORT:-}
+      - MAC_TAGS=${MAC_TAGS:-llm}
+      - MAC_HEARTBEAT_SEC=${HEARTBEAT_SEC:-10}
+    network_mode: host   # needs to see vLLM on localhost AND reach master
+    restart: unless-stopped
+    depends_on:
+      vllm:
+        condition: service_healthy
+
+volumes:
+  hf-cache:
+  notebooks:
+
+networks:
+  worker-net:
+    driver: bridge

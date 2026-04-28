@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#000000">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <title>MAC — MBM AI Cloud</title>
+  <link rel="manifest" href="/static/manifest.json">
+  <link rel="icon" href="/static/favicon.ico" sizes="48x48">
+  <link rel="icon" href="/static/icon-192.png" type="image/png" sizes="192x192">
+  <link rel="apple-touch-icon" href="/static/icon-192.png">
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/libs/github-dark.min.css">
+  <script src="/static/libs/chart.umd.min.js"></script>
+  <script src="/static/libs/highlight.min.js"></script>
+  <script src="/static/libs/hljs-python.min.js"></script>
+  <script src="/static/libs/hljs-javascript.min.js"></script>
+  <script src="/static/libs/hljs-bash.min.js"></script>
+  <script src="/static/libs/hljs-sql.min.js"></script>
+  <script src="/static/libs/hljs-java.min.js"></script>
+  <script src="/static/libs/hljs-cpp.min.js"></script>
+  <script src="/static/libs/hljs-typescript.min.js"></script>
+  <script src="/static/libs/mermaid.min.js"></script>
+  <script>
+    // Init mermaid with MAC theme
+    window.addEventListener('DOMContentLoaded', () => {
+      if (window.mermaid) {
+        mermaid.initialize({ startOnLoad: false, theme: 'default', securityLevel: 'loose' });
+      }
+    });
+  </script>
+</head>
+<body>
+  <div id="app"></div>
+  <script src="/static/js/i18n.js"></script>
+  <script src="/static/js/auth.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>

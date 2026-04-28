@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+venv/
+env/
+.venv/
+*.env
+.env
+
+# Docker / runtime
+.docker/
+docker-compose.override.yml
+
+# Secrets / keys
+*.key
+*.pem
+*.crt
+secrets/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+logs/
+
+# Database / data volumes (never commit actual data)
+data/
+pgdata/
+uploads/
+qdrant_storage/
+
+# Test / coverage
+.pytest_cache/
+.coverage
+htmlcov/
