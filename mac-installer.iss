@@ -131,8 +131,6 @@ var
   ReadyLabel: TNewStaticText;
   DetectedIP: String;
   MascotLabel: TNewStaticText;
-  MascotFrame: Integer;
-  MascotTimer: TTimer;
 
 { ═══════════════════════════════════════════════════════════
   UTILITY: Run a command, capture stdout to file, read it back
@@ -294,20 +292,12 @@ begin
   end;
 end;
 
-procedure MascotTimerTick(Sender: TObject);
-begin
-  MascotFrame := MascotFrame + 1;
-  if MascotLabel <> nil then
-    MascotLabel.Caption := GetMascotFrame(MascotFrame);
-end;
-
 { ═══════════════════════════════════════════════════════════
   WIZARD PAGES — Hardware scan + Ready summary
   ═══════════════════════════════════════════════════════════ }
 procedure InitializeWizard();
 begin
-  { Animated mascot on the welcome page }
-  MascotFrame := 0;
+  { Static mascot on the welcome page }
   MascotLabel := TNewStaticText.Create(WizardForm);
   MascotLabel.Parent := WizardForm.WelcomePage;
   MascotLabel.Left := 185;
@@ -318,11 +308,6 @@ begin
   MascotLabel.Font.Size := 9;
   MascotLabel.Font.Color := $003A70C2;
   MascotLabel.Caption := GetMascotFrame(0);
-
-  MascotTimer := TTimer.Create(WizardForm);
-  MascotTimer.Interval := 1500;
-  MascotTimer.OnTimer := @MascotTimerTick;
-  MascotTimer.Enabled := True;
 
   { Page 1: Hardware info — shown after component selection }
   HardwareInfoPage := CreateCustomPage(
@@ -386,10 +371,6 @@ procedure CurPageChanged(CurPageID: Integer);
 var
   Summary: String;
 begin
-  { Toggle mascot animation — only active on welcome page }
-  if MascotTimer <> nil then
-    MascotTimer.Enabled := (CurPageID = wpWelcome);
-
   { Hardware scan page }
   if CurPageID = HardwareInfoPage.ID then
   begin
