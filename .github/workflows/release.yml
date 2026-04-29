@@ -9,8 +9,8 @@ permissions:
   contents: write
 
 jobs:
-  build-installer:
-    name: Build Windows Installer
+  build-and-release:
+    name: Build Installer & Publish Release
     runs-on: windows-latest
 
     steps:
@@ -26,23 +26,24 @@ jobs:
         shell: pwsh
         run: |
           $ver = "${{ steps.version.outputs.VERSION }}"
-          (Get-Content mac-installer.iss) `
-            -replace '#define AppVersion ".*"', "#define AppVersion `"$ver`"" |
-            Set-Content mac-installer.iss
+          (Get-Content mac-installer.iss -Raw) `
+            -replace '#define AppVersion "[^"]*"', "#define AppVersion `"$ver`"" |
+            Set-Content mac-installer.iss -NoNewline
 
-      - name: Ensure placeholder assets exist
+      - name: Ensure build-time assets exist
         shell: pwsh
         run: |
-          # Inno Setup needs these files present at compile time
-          if (-not (Test-Path "logo.png"))  { Copy-Item "logo_256.png" "logo.png" -ErrorAction SilentlyContinue }
-          if (-not (Test-Path ".env.example")) { Copy-Item ".env.example.ci" ".env.example" -ErrorAction SilentlyContinue }
+          if (-not (Test-Path "logo.png")) {
+            Copy-Item "logo_256.png" "logo.png"
+          }
 
       - name: Install Inno Setup 6
         shell: pwsh
         run: |
-          $url = "https://files.jrsoftware.org/is/6/innosetup-6.3.3.exe"
-          Invoke-WebRequest -Uri $url -OutFile "$env:TEMP\issetup.exe"
-          Start-Process -FilePath "$env:TEMP\issetup.exe" `
+          $url  = "https://files.jrsoftware.org/is/6/innosetup-6.3.3.exe"
+          $dest = "$env:TEMP\issetup.exe"
+          Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing
+          Start-Process -FilePath $dest `
             -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" `
             -Wait
 
@@ -53,62 +54,43 @@ jobs:
           & $iscc mac-installer.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Rename output artifact
+      - name: Rename installer to versioned name
         shell: pwsh
         run: |
           $ver = "${{ steps.version.outputs.VERSION }}"
-          $src = "dist\MAC-Setup-$ver.exe"
-          $dst = "dist\MAC-$ver-Setup.exe"
-          if (Test-Path $src) { Rename-Item $src $dst }
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          $candidates = Get-ChildItem dist\*.exe
+          foreach ($f in $candidates) {
+            $newName = "MAC-$ver-Setup.exe"
+            Rename-Item $f.FullName $newName -ErrorAction SilentlyContinue
+          }
           Get-ChildItem dist\
 
-      - name: Upload installer artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: MAC-Installer-${{ steps.version.outputs.VERSION }}
-          path: dist\*.exe
-          if-no-files-found: error
-
-  publish-release:
-    name: Publish GitHub Release
-    runs-on: ubuntu-latest
-    needs: build-installer
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Read version from tag
-        id: version
-        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-
-      - name: Download installer artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: MAC-Installer-${{ steps.version.outputs.VERSION }}
-          path: dist/
-
-      - name: Extract changelog for this version
-        id: changelog
+      - name: Write release notes
+        shell: bash
         run: |
           VERSION="${{ steps.version.outputs.VERSION }}"
-          NOTES=$(awk "/^## \[?v?${VERSION}\]?/{found=1; next} /^## /{if(found) exit} found{print}" CHANGELOG.md 2>/dev/null || echo "")
+          # Try to extract this version's section from CHANGELOG.md
+          NOTES=$(awk "/^## \[?v?${VERSION}\]?/{found=1;next} /^## \[/{if(found)exit} found{print}" CHANGELOG.md 2>/dev/null)
           if [ -z "$NOTES" ]; then
-            NOTES="MAC v${VERSION} — self-hosted AI inference platform for Windows.\n\nSee [WALKTHROUGH.md](WALKTHROUGH.md) for setup instructions."
+            NOTES="## MAC v${VERSION}
+
+Self-hosted AI inference platform for Windows — run LLMs locally on your campus network.
+
+### Install
+1. Download \`MAC-${VERSION}-Setup.exe\` below and run it
+2. Choose **Host** (full server) or **Worker** (GPU/CPU node) during setup
+3. Docker Desktop must be running before first launch
+
+See [WALKTHROUGH.md](https://github.com/${{ github.repository }}/blob/master/WALKTHROUGH.md) for the full setup guide."
           fi
-          {
-            echo "NOTES<<EOF"
-            echo -e "$NOTES"
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
+          echo "$NOTES" > release-notes.md
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v1
         with:
           name: "MAC v${{ steps.version.outputs.VERSION }}"
-          body: ${{ steps.changelog.outputs.NOTES }}
+          body_path: release-notes.md
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
-          files: |
-            dist/*.exe
-          generate_release_notes: true
+          files: dist/*.exe
