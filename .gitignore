@@ -30,11 +30,12 @@ secrets/
 Thumbs.db
 desktop.ini
 
-# IDE
+# IDE / AI assistants
 .vscode/
 .idea/
 *.swp
 *.swo
+.claude/
 
 # Logs
 *.log

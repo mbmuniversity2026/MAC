@@ -1,8 +1,22 @@
-const CACHE_NAME = 'mac-v2';
-const ASSETS = ['/', '/static/style.css', '/static/app.js'];
+const CACHE_NAME = 'mac-v4';
+const ASSETS = [
+  '/',
+  '/static/style.css',
+  '/static/app.js',
+  '/static/js/auth.js',
+  '/static/js/i18n.js',
+  '/manifest.json',
+  '/static/favicon.ico',
+  '/static/icon-192.png',
+  '/static/icon-512.png',
+];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE_NAME).then(c => c.addAll(ASSETS)));
+  e.waitUntil(
+    caches.open(CACHE_NAME).then(c =>
+      Promise.allSettled(ASSETS.map(url => c.add(url).catch(() => {})))
+    )
+  );
   self.skipWaiting();
 });
 
@@ -17,10 +31,36 @@ self.addEventListener('activate', e => {
 
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
-  // Network-first for API, cache-first for static assets
-  if (e.request.url.includes('/api/')) return;
+  const url = new URL(e.request.url);
+
+  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/ws/')) return;
+
+  if (url.pathname.startsWith('/static/libs/')) {
+    e.respondWith(
+      caches.match(e.request).then(cached => {
+        if (cached) return cached;
+        return fetch(e.request).then(resp => {
+          if (resp.ok) {
+            const clone = resp.clone();
+            caches.open(CACHE_NAME).then(c => c.put(e.request, clone));
+          }
+          return resp;
+        });
+      })
+    );
+    return;
+  }
+
   e.respondWith(
-    caches.match(e.request).then(cached => cached || fetch(e.request))
+    fetch(e.request)
+      .then(resp => {
+        if (resp.ok) {
+          const clone = resp.clone();
+          caches.open(CACHE_NAME).then(c => c.put(e.request, clone));
+        }
+        return resp;
+      })
+      .catch(() => caches.match(e.request).then(cached => cached || caches.match('/')))
   );
 });
 

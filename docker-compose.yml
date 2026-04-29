@@ -14,7 +14,7 @@ services:
     build: .
     container_name: mac-api
     ports:
-      - "${APP_HOST:-0.0.0.0}:8001:8000"
+      - "${APP_HOST:-0.0.0.0}:8000:8000"
     env_file: .env
     environment:
       - DATABASE_URL=postgresql+asyncpg://mac:mac_password@postgres:5432/mac_db
@@ -35,6 +35,12 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1')\" 2>/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     logging:
       driver: "json-file"
       options:
@@ -49,9 +55,12 @@ services:
   # ═══════════════════════════════════════════════════════
 
   # ── Speed Model: Qwen2.5-7B (handles ALL chat/code/general) ──
+  # Requires NVIDIA GPU. Start with: docker compose --profile gpu up -d
+  # Without GPU, MAC works in API-key-only mode (OpenAI/Anthropic keys).
   vllm-speed:
     image: vllm/vllm-openai:latest
     container_name: mac-vllm-speed
+    profiles: ["gpu"]
     ports:
       - "${VLLM_SPEED_PORT:-8001}:${VLLM_SPEED_PORT:-8001}"
     environment:
@@ -196,17 +205,30 @@ services:
     networks:
       - mac-net
 
-  # ── Nginx — Reverse proxy + SvelteKit frontend ─────────
+  # ── Nginx — Reverse proxy + SSL termination ─────────────
   nginx:
     image: nginx:alpine
     container_name: mac-nginx
     ports:
       - "${APP_HOST:-0.0.0.0}:${APP_PORT:-80}:80"
+      - "${APP_HOST:-0.0.0.0}:443:443"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./frontend:/app:ro               # Vanilla JS frontend (no build step)
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - ./frontend:/app:ro
     depends_on:
-      - mac
+      mac:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost/nginx-health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "1"
     logging:
       driver: "json-file"
       options:

@@ -27,6 +27,7 @@ class StudentRegistry(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_gen_uuid)
     roll_number: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False)
+    registration_number: Mapped[str | None] = mapped_column(String(50), unique=True, index=True, nullable=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     department: Mapped[str] = mapped_column(String(20), nullable=False, default="CSE")
     dob: Mapped[date] = mapped_column(Date, nullable=False)          # DD‑MM‑YYYY at entry

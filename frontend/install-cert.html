@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MAC — Install Certificate</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <style>
+    body { background: var(--bg); color: var(--fg); font-family: 'Inter', -apple-system, sans-serif; }
+    .cert-page { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+    .cert-card {
+      max-width: 520px; width: 100%;
+      background: var(--card); border: 1px solid var(--border); border-radius: 20px;
+      padding: 40px 32px 32px; box-shadow: 0 8px 40px rgba(0,0,0,.12);
+    }
+    .cert-title { font-family: 'Courier New', monospace; font-size: 2.4rem; text-align: center; margin: 0 0 4px; font-weight: 900; letter-spacing: .1em; color: var(--fg); }
+    .cert-sub { text-align: center; color: var(--muted); font-size: 12px; margin: 0 0 28px; }
+    .cert-icon { text-align: center; font-size: 4rem; margin-bottom: 16px; }
+    .cert-desc { font-size: 14px; color: var(--fg-secondary); line-height: 1.6; margin-bottom: 24px; }
+    .cert-desc strong { color: var(--fg); }
+    .download-btn {
+      display: flex; align-items: center; justify-content: center; gap: 10px;
+      width: 100%; padding: 14px 24px;
+      background: var(--accent); color: var(--accent-text);
+      border: none; border-radius: 12px; font-size: 15px; font-weight: 600;
+      cursor: pointer; transition: all .2s;
+      text-decoration: none;
+    }
+    .download-btn:hover { background: var(--accent-hover); transform: translateY(-1px); }
+    .steps { margin: 24px 0 0; padding: 0; }
+    .steps li {
+      display: flex; align-items: flex-start; gap: 12px;
+      padding: 14px 0; border-bottom: 1px solid var(--border);
+      font-size: 13px; color: var(--fg-secondary); line-height: 1.5;
+    }
+    .steps li:last-child { border-bottom: none; }
+    .step-num {
+      flex-shrink: 0; width: 28px; height: 28px;
+      background: var(--accent-light); color: var(--accent);
+      border-radius: 50%; display: flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: 13px;
+    }
+    .platform-tabs { display: flex; gap: 8px; margin-bottom: 20px; }
+    .platform-tab {
+      flex: 1; padding: 10px; text-align: center;
+      background: var(--hover); border: 1px solid var(--border); border-radius: 10px;
+      cursor: pointer; font-size: 13px; font-weight: 600; color: var(--muted);
+      transition: all .2s;
+    }
+    .platform-tab.active { background: var(--accent-light); color: var(--accent); border-color: var(--accent); }
+    .platform-content { display: none; }
+    .platform-content.active { display: block; }
+    .back-link { display: block; text-align: center; margin-top: 20px; color: var(--muted); font-size: 12px; }
+    .back-link a { color: var(--accent); text-decoration: none; }
+    .back-link a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="cert-page">
+    <div class="cert-card">
+      <div class="cert-icon">🔒</div>
+      <h1 class="cert-title">MAC</h1>
+      <p class="cert-sub">Install Trusted Certificate</p>
+
+      <p class="cert-desc">
+        To use <strong>MAC as an installable app</strong> on this device, you need to install
+        our local network certificate. This is a <strong>one-time setup</strong> that makes
+        your browser trust the MAC server on this WiFi network.
+      </p>
+
+      <a href="/ca.crt" download="MAC-CA.crt" class="download-btn" id="download-btn">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Download CA Certificate
+      </a>
+
+      <div class="platform-tabs">
+        <div class="platform-tab active" onclick="showPlatform('android')">Android</div>
+        <div class="platform-tab" onclick="showPlatform('ios')">iPhone / iPad</div>
+        <div class="platform-tab" onclick="showPlatform('windows')">Windows</div>
+      </div>
+
+      <div id="android-steps" class="platform-content active">
+        <ol class="steps">
+          <li><span class="step-num">1</span><span>Tap <strong>Download CA Certificate</strong> above</span></li>
+          <li><span class="step-num">2</span><span>Open <strong>Settings → Security → Encryption & credentials</strong></span></li>
+          <li><span class="step-num">3</span><span>Tap <strong>Install a certificate → CA certificate</strong></span></li>
+          <li><span class="step-num">4</span><span>Select the downloaded <strong>MAC-CA.crt</strong> file</span></li>
+          <li><span class="step-num">5</span><span>Done! Now open <strong id="https-url-android"></strong> — you'll see the install icon in Chrome</span></li>
+        </ol>
+      </div>
+
+      <div id="ios-steps" class="platform-content">
+        <ol class="steps">
+          <li><span class="step-num">1</span><span>Tap <strong>Download CA Certificate</strong> above</span></li>
+          <li><span class="step-num">2</span><span>A popup says "This website is trying to download a profile" — tap <strong>Allow</strong></span></li>
+          <li><span class="step-num">3</span><span>Go to <strong>Settings → General → VPN & Device Management</strong></span></li>
+          <li><span class="step-num">4</span><span>Tap <strong>MAC Local CA</strong> → <strong>Install</strong> → enter passcode</span></li>
+          <li><span class="step-num">5</span><span>Go to <strong>Settings → General → About → Certificate Trust Settings</strong></span></li>
+          <li><span class="step-num">6</span><span>Enable <strong>Full trust for MAC Local CA</strong></span></li>
+          <li><span class="step-num">7</span><span>Done! Open <strong id="https-url-ios"></strong> in Safari</span></li>
+        </ol>
+      </div>
+
+      <div id="windows-steps" class="platform-content">
+        <ol class="steps">
+          <li><span class="step-num">1</span><span>Click <strong>Download CA Certificate</strong> above</span></li>
+          <li><span class="step-num">2</span><span>Double-click the downloaded <strong>MAC-CA.crt</strong> file</span></li>
+          <li><span class="step-num">3</span><span>Click <strong>Install Certificate → Local Machine → Next</strong></span></li>
+          <li><span class="step-num">4</span><span>Select <strong>"Place all certificates in: Trusted Root Certification Authorities"</strong></span></li>
+          <li><span class="step-num">5</span><span>Click <strong>Finish</strong> → restart Chrome</span></li>
+          <li><span class="step-num">6</span><span>Done! Open <strong id="https-url-win"></strong></span></li>
+        </ol>
+      </div>
+
+      <div class="back-link">
+        <a href="/">← Back to MAC</a>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    var host = location.hostname;
+    var httpsUrl = 'https://' + host;
+    document.getElementById('https-url-android').textContent = httpsUrl;
+    document.getElementById('https-url-ios').textContent = httpsUrl;
+    document.getElementById('https-url-win').textContent = httpsUrl;
+
+    function showPlatform(p) {
+      document.querySelectorAll('.platform-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.platform-content').forEach(c => c.classList.remove('active'));
+      event.target.classList.add('active');
+      document.getElementById(p + '-steps').classList.add('active');
+    }
+
+    // Apply saved theme
+    var t = localStorage.getItem('mac_theme') || 'warm';
+    document.documentElement.setAttribute('data-theme', t);
+  </script>
+</body>
+</html>

@@ -42,9 +42,17 @@ var _wmMouse = { x: -9999, y: -9999 };
 var _wmRaf   = null;
 
 /* ── Init physics watermark ─────────────────────────────── */
+function _wmBaseOpacity() {
+  /* Detect if current theme is dark */
+  var t = document.documentElement.getAttribute('data-theme') || 'warm';
+  return (t === 'dark' || t === 'nordic') ? 0.18 : 0.08;
+}
+
 function _wmInit() {
   var layer = document.getElementById('wm-layer');
   if (!layer) return;
+
+  var baseOp = _wmBaseOpacity();
 
   // Render word spans (positioned via % CSS, physics adds translate)
   layer.innerHTML = WM_WORDS.map(function(w, i) {
@@ -53,7 +61,7 @@ function _wmInit() {
       'top:' + w.y + '%;' +
       'font-size:' + w.size + 'px;' +
       'transform:rotate(' + w.rot + 'deg);' +
-      'opacity:.08">' + w.text + '</span>';
+      'opacity:' + baseOp + '">' + w.text + '</span>';
   }).join('');
 
   // Wait one frame so the browser lays out positions
@@ -71,7 +79,7 @@ function _wmInit() {
         origX: cx, origY: cy,
         currX: cx, currY: cy,
         vx: 0, vy: 0,
-        opacity: 0.08,
+        opacity: baseOp,
       });
     }
     _wmLoop();
@@ -79,12 +87,14 @@ function _wmInit() {
 
   function _onMouseMove(e)  { _wmMouse.x = e.clientX;         _wmMouse.y = e.clientY; }
   function _onMouseLeave()  { _wmMouse.x = -9999;              _wmMouse.y = -9999; }
+  function _onTouchStart(e) { if (e.touches.length) { _wmMouse.x = e.touches[0].clientX; _wmMouse.y = e.touches[0].clientY; } }
   function _onTouchMove(e)  { if (e.touches.length) { _wmMouse.x = e.touches[0].clientX; _wmMouse.y = e.touches[0].clientY; } }
   function _onTouchEnd()    { _wmMouse.x = -9999;              _wmMouse.y = -9999; }
 
   window.addEventListener('mousemove',  _onMouseMove);
   window.addEventListener('mouseleave', _onMouseLeave);
-  window.addEventListener('touchmove',  _onTouchMove, { passive: true });
+  window.addEventListener('touchstart', _onTouchStart, { passive: true });
+  window.addEventListener('touchmove',  _onTouchMove,  { passive: true });
   window.addEventListener('touchend',   _onTouchEnd);
 
   /* Store cleanup so navigate() can stop the loop */
@@ -92,6 +102,7 @@ function _wmInit() {
     if (_wmRaf) { cancelAnimationFrame(_wmRaf); _wmRaf = null; }
     window.removeEventListener('mousemove',  _onMouseMove);
     window.removeEventListener('mouseleave', _onMouseLeave);
+    window.removeEventListener('touchstart', _onTouchStart);
     window.removeEventListener('touchmove',  _onTouchMove);
     window.removeEventListener('touchend',   _onTouchEnd);
     window._wmCleanupFn = null;
@@ -103,18 +114,30 @@ function _wmLoop() {
   var layer = document.getElementById('wm-layer');
   if (!layer) { _wmRaf = null; return; }
 
+  var baseOp = _wmBaseOpacity();
+  var maxOp  = baseOp < 0.12 ? 0.55 : 0.75; /* dark mode gets brighter peaks */
+
   for (var i = 0; i < _wmObjs.length; i++) {
     var w  = _wmObjs[i];
     var dx = w.currX - _wmMouse.x;
     var dy = w.currY - _wmMouse.y;
     var dist = Math.sqrt(dx * dx + dy * dy) || 1;
 
-    /* Opacity: brighten near cursor */
-    var tOpacity = (dist < WM_PROX_R)
-      ? 0.08 + (1 - dist / WM_PROX_R) * 0.50
-      : 0.08;
+    /* Opacity: brighten near cursor/finger */
+    var isNear = dist < WM_PROX_R;
+    var tOpacity = isNear
+      ? baseOp + (1 - dist / WM_PROX_R) * (maxOp - baseOp)
+      : baseOp;
     w.opacity += (tOpacity - w.opacity) * 0.10;
-    if (w.el) w.el.style.opacity = w.opacity.toFixed(3);
+    if (w.el) {
+      w.el.style.opacity = w.opacity.toFixed(3);
+      /* data-near for CSS glow in dark mode */
+      if (isNear && dist < WM_PROX_R * 0.6) {
+        w.el.setAttribute('data-near', '1');
+      } else {
+        w.el.removeAttribute('data-near');
+      }
+    }
 
     /* Repulsion */
     if (dist < WM_REPEL_R) {
@@ -200,6 +223,23 @@ var _SVG_LOCK = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" str
 var _SVG_CAL  = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>';
 var _SVG_DOOR = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>';
 var _SVG_CHECK= '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+var _MAC_MASCOT_SM = '<svg class="mac-mascot" width="28" height="28" viewBox="0 0 32 32" fill="none">' +
+  '<g class="mascot-body">' +
+  '<ellipse cx="16" cy="16" rx="10" ry="11" fill="var(--accent)"/>' +
+  '<ellipse cx="16" cy="17" rx="8" ry="7" fill="var(--accent)" opacity=".9"/>' +
+  '<circle cx="12.5" cy="14" r="3" fill="#fff" class="mascot-eye mascot-eye-l"/>' +
+  '<circle cx="19.5" cy="14" r="3" fill="#fff" class="mascot-eye mascot-eye-r"/>' +
+  '<circle cx="12.5" cy="14.3" r="1.5" fill="#1a1a1a" class="mascot-pupil"/>' +
+  '<circle cx="19.5" cy="14.3" r="1.5" fill="#1a1a1a" class="mascot-pupil mascot-pupil-wink"/>' +
+  '<ellipse cx="16" cy="19" rx="2.5" ry="1.3" fill="#fff" opacity=".9"/>' +
+  '<ellipse cx="10" cy="17" rx="1.5" ry="1" fill="#ff9a76" opacity=".4"/>' +
+  '<ellipse cx="22" cy="17" rx="1.5" ry="1" fill="#ff9a76" opacity=".4"/>' +
+  '<circle cx="7" cy="10" r="1.5" fill="var(--accent)" opacity=".6"/>' +
+  '<circle cx="25" cy="10" r="1.5" fill="var(--accent)" opacity=".6"/>' +
+  '<rect x="13" y="25" width="2" height="3" rx="1" fill="var(--accent)"/>' +
+  '<rect x="17" y="25" width="2" height="3" rx="1" fill="var(--accent)"/>' +
+  '</g></svg>';
+var _MAC_MASCOT = _MAC_MASCOT_SM;
 var _SVG_GLOBE= '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>';
 var _SVG_CHEV = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>';
 var _SVG_BACK = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>';
@@ -214,7 +254,12 @@ function authThemeIcon() {
 }
 function toggleAuthTheme() {
   var th = document.documentElement.getAttribute('data-theme') || 'warm';
-  applyTheme(th === 'dark' ? 'warm' : 'dark'); /* applyTheme is in app.js */
+  var darkAllowed = (typeof flagOn === 'function') ? flagOn('dark_mode') : true;
+  if (th === 'dark') {
+    applyTheme('warm');
+  } else if (darkAllowed) {
+    applyTheme('dark');
+  }
   var btn = document.getElementById('auth-theme-btn');
   if (btn) btn.innerHTML = authThemeIcon();
 }
@@ -331,7 +376,7 @@ function authPage() {
       '<button type="submit" class="sign-btn" id="auth-submit">' + _SVG_DOOR + '<span>' + esc(i18n.t('signIn')) + '</span></button>' +
     '</form>' +
     '<div class="auth-divider"><span>' + esc(i18n.t('or')) + '</span></div>' +
-    '<button class="alt-btn" id="switch-to-verify">' + _SVG_CHECK + '<span>' + esc(i18n.t('firstTime')) + '</span></button>' +
+    '<button class="alt-btn" id="switch-to-verify">' + _MAC_MASCOT + '<span>' + esc(i18n.t('firstTime')) + '</span></button>' +
     footer +
   '</div></div>';
 }

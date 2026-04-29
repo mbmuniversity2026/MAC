@@ -180,7 +180,12 @@
   --badge-bg:#fff5cc;--badge-fg:#9a7a00;
   --scrollbar:#f5e088;--scrollbar-hover:#d4a80a;
 }
-html,body{height:100%;font-family:'Inter','Segoe UI',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--fg);line-height:1.5;-webkit-font-smoothing:antialiased}
+html{scroll-behavior:smooth}
+html,body{height:100%;font-family:'Inter','Segoe UI',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--fg);line-height:1.5;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+/* Performance: GPU-accelerated transforms for animated elements */
+.auth-card,.sidebar,.page,.modal,.stat-card,.chart-card{transform:translateZ(0);backface-visibility:hidden}
+/* Lazy-render off-screen content for large pages */
+.page{content-visibility:auto;contain-intrinsic-size:auto 500px}
 a{color:inherit;text-decoration:none}
 button{cursor:pointer;font:inherit;border:none;background:none}
 input,select,textarea{font:inherit;border:1px solid var(--border);border-radius:var(--radius);padding:10px 14px;background:var(--bg);color:var(--fg);outline:none;transition:border-color .15s,box-shadow .15s;width:100%}
@@ -223,8 +228,14 @@ input:focus,textarea:focus,select:focus{border-color:var(--input-focus);box-shad
 .auth-orb-2{width:360px;height:360px;bottom:-80px;right:-80px;background:rgba(194,112,58,.09);animation-delay:-4s}
 @keyframes orbFloat{from{transform:translate(0,0) scale(1)}to{transform:translate(18px,22px) scale(1.05)}}
 /* Physics watermark */
-.wm-layer{position:absolute;inset:0;pointer-events:none;user-select:none;overflow:hidden}
-.wm-word{position:absolute;font-weight:900;letter-spacing:.15em;color:var(--accent);font-family:'Courier New',monospace;pointer-events:none;opacity:.18;transition:opacity .3s}
+.wm-layer{position:absolute;inset:0;pointer-events:none;user-select:none;overflow:hidden;z-index:1}
+.wm-word{position:absolute;font-weight:900;letter-spacing:.15em;color:var(--accent);font-family:'Courier New',monospace;pointer-events:none;transition:opacity .3s,text-shadow .4s,color .4s}
+/* Dark-mode watermark: glowing neon effect */
+[data-theme="dark"] .wm-word{color:#D4834A;text-shadow:0 0 8px rgba(212,131,74,.35),0 0 20px rgba(212,131,74,.15),0 0 40px rgba(212,131,74,.08)}
+[data-theme="dark"] .wm-word[data-near="1"]{text-shadow:0 0 12px rgba(212,131,74,.6),0 0 30px rgba(212,131,74,.3),0 0 60px rgba(212,131,74,.12)}
+/* Dark-mode orbs are more visible */
+[data-theme="dark"] .auth-orb-1{background:rgba(212,131,74,.10)}
+[data-theme="dark"] .auth-orb-2{background:rgba(212,131,74,.07)}
 /* Auth card */
 .auth-card{position:relative;z-index:10;width:100%;max-width:410px;margin:0 16px;background:var(--card);border:1px solid var(--border);border-radius:20px;padding:36px 32px 28px;box-shadow:0 8px 40px rgba(0,0,0,.12);animation:auth-card-in .45s cubic-bezier(.16,1,.3,1) both}
 @keyframes auth-card-in{from{opacity:0;transform:translateY(18px) scale(.97)}to{opacity:1;transform:none}}
@@ -262,6 +273,15 @@ input:focus,textarea:focus,select:focus{border-color:var(--input-focus);box-shad
 /* Alt / switch button */
 .alt-btn{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;padding:11px 16px;background:none;border:1px solid var(--border);border-radius:11px;cursor:pointer;font-size:13px;font-weight:500;color:var(--fg-secondary);font-family:inherit;transition:border-color .2s,color .2s,background .2s}
 .alt-btn:hover{border-color:var(--accent);color:var(--accent);background:rgba(194,112,58,.04)}
+/* ── MAC Mascot character animations ── */
+.mac-mascot{flex-shrink:0;overflow:visible}
+.mac-mascot .mascot-body{animation:mascotBreathe 3s ease-in-out infinite;transform-origin:center 18px}
+.mac-mascot .mascot-pupil-wink{animation:mascotWink 4s ease-in-out infinite}
+@keyframes mascotBreathe{0%,100%{transform:scaleY(1) translateY(0)}50%{transform:scaleY(1.03) translateY(-0.5px)}}
+@keyframes mascotWink{0%,40%,55%,100%{ry:1.5;opacity:1}44%,51%{ry:.2;opacity:.5}}
+.alt-btn:hover .mac-mascot .mascot-body{animation:mascotBounce .5s ease}
+@keyframes mascotBounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+.alt-btn:hover .mac-mascot .mascot-pupil{fill:var(--accent)}
 /* Auth divider (kept for legacy use) */
 .auth-divider{display:flex;align-items:center;gap:10px;margin:16px 0;color:var(--muted);font-size:.72rem}
 .auth-divider::before,.auth-divider::after{content:'';flex:1;height:1px;background:var(--border)}

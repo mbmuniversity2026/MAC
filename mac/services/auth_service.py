@@ -43,7 +43,13 @@ async def get_registry_entry(db: AsyncSession, roll_number: str) -> StudentRegis
     result = await db.execute(
         select(StudentRegistry).where(StudentRegistry.roll_number == roll_number)
     )
-    return result.scalar_one_or_none()
+    entry = result.scalar_one_or_none()
+    if entry:
+        return entry
+    result2 = await db.execute(
+        select(StudentRegistry).where(StudentRegistry.registration_number == roll_number)
+    )
+    return result2.scalar_one_or_none()
 
 
 # ── Authentication ────────────────────────────────────────

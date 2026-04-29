@@ -7,12 +7,15 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
   <title>MAC — MBM AI Cloud</title>
-  <link rel="manifest" href="/static/manifest.json">
+  <link rel="manifest" href="/manifest.json">
   <link rel="icon" href="/static/favicon.ico" sizes="48x48">
   <link rel="icon" href="/static/icon-192.png" type="image/png" sizes="192x192">
   <link rel="apple-touch-icon" href="/static/icon-192.png">
   <link rel="stylesheet" href="/static/style.css">
   <link rel="stylesheet" href="/static/libs/github-dark.min.css">
+  <link rel="preconnect" href="/" crossorigin>
+  <link rel="dns-prefetch" href="/">
+  <meta name="description" content="MAC — MBM AI Cloud. Self-hosted AI inference platform.">
   <script src="/static/libs/chart.umd.min.js"></script>
   <script src="/static/libs/highlight.min.js"></script>
   <script src="/static/libs/hljs-python.min.js"></script>
@@ -23,9 +26,9 @@
   <script src="/static/libs/hljs-cpp.min.js"></script>
   <script src="/static/libs/hljs-typescript.min.js"></script>
   <script src="/static/libs/mermaid.min.js"></script>
-  <!-- Monaco Editor (VS Code engine) — loaded on demand for MBM Book -->
-  <link rel="stylesheet" data-name="vs/editor/editor.main" href="https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs/editor/editor.main.css">
-  <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs/loader.js"></script>
+  <!-- Monaco Editor (VS Code engine) — bundled locally for offline operation -->
+  <link rel="stylesheet" data-name="vs/editor/editor.main" href="/static/libs/monaco-editor/min/vs/editor/editor.main.css">
+  <script src="/static/libs/monaco-editor/min/vs/loader.js"></script>
   <script>
     // Init mermaid with MAC theme
     window.addEventListener('DOMContentLoaded', () => {

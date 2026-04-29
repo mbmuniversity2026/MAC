@@ -18,7 +18,7 @@ class SignupRequest(BaseModel):
 
 
 class VerifyRequest(BaseModel):
-    roll_number: str = Field(..., min_length=3, max_length=40, examples=["21CS045"])
+    roll_number: str = Field(..., min_length=3, max_length=50, examples=["J2234345A"], description="Registration number (or roll number for legacy)")
     dob: str = Field(..., examples=["15082003"], description="DOB as DDMMYYYY")
 
 
@@ -122,6 +122,7 @@ class UpdateStatusRequest(BaseModel):
 
 class RegistryEntryRequest(BaseModel):
     roll_number: str = Field(..., min_length=1, max_length=50)
+    registration_number: Optional[str] = Field(default=None, max_length=50)
     name: str = Field(..., min_length=1, max_length=100)
     department: str = Field(default="CSE", max_length=50)
     dob: str = Field(..., examples=["15-08-2003"], description="DD-MM-YYYY")

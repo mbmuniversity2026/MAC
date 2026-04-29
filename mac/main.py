@@ -206,7 +206,10 @@ async def root():
 # ── SPA catch-all: serve index.html for all frontend routes ──
 @app.get("/{full_path:path}")
 async def spa_fallback(full_path: str):
-    """Serve SvelteKit SPA for any non-API route."""
+    """Serve SPA index.html for any non-API frontend route."""
+    # Don't intercept API, docs, static, or nginx-served special pages
+    if full_path.startswith(("api/", "docs", "redoc", "openapi.json", "static/", "ws/")) or full_path in ("install-cert", "ca.crt", "join", "manifest.json", "sw.js", "nginx-health"):
+        return JSONResponse(status_code=404, content={"detail": "Not found"})
     index_file = FRONTEND_DIR / "index.html"
     if index_file.exists():
         return FileResponse(str(index_file))
@@ -292,14 +295,15 @@ async def _seed_dev_user():
 
             # ── 3) Student: Aaryan Rajput ─────────────────────
             registry_entries = [
-                ("abhisek.cse@mbm.ac.in", "Prof. Abhishek Gaur", "CSE", date(1990, 1, 1), 2020),
-                ("raj.cse@mbm.ac.in", "Dr. Raj Kumar", "CSE", date(1985, 6, 15), 2018),
-                ("21CS045", "Aaryan Rajput", "CSE", date(2003, 8, 15), 2021),
+                ("abhisek.cse@mbm.ac.in", "Prof. Abhishek Gaur", "CSE", date(1990, 1, 1), 2020, "admin", None),
+                ("raj.cse@mbm.ac.in", "Dr. Raj Kumar", "CSE", date(1985, 6, 15), 2018, "faculty", None),
+                ("21CS045", "Aaryan Rajput", "CSE", date(2003, 8, 15), 2021, "student", "J2234345A"),
             ]
-            for roll, name, dept, dob, batch in registry_entries:
+            for roll, name, dept, dob, batch, role, reg_no in registry_entries:
                 if not await get_registry_entry(db, roll):
                     db.add(StudentRegistry(
-                        roll_number=roll, name=name, department=dept, dob=dob, batch_year=batch,
+                        roll_number=roll, name=name, department=dept, dob=dob,
+                        batch_year=batch, role=role, registration_number=reg_no,
                     ))
 
             if not await get_user_by_roll(db, "21CS045"):

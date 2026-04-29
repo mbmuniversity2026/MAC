@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#FAF8F5">
+  <title>MAC — Join GPU Cluster</title>
+  <link rel="icon" href="/static/favicon.ico" sizes="48x48">
+  <link rel="icon" href="/static/icon-192.png" type="image/png" sizes="192x192">
+  <link rel="apple-touch-icon" href="/static/icon-192.png">
+  <link rel="stylesheet" href="/static/style.css">
+  <style>
+    /* join-specific overrides */
+    .join-status-wrap { display:none; text-align:center; padding:24px 0; }
+    .join-success { color: var(--success); }
+    .join-pending { color: var(--accent); }
+    .join-fail    { color: var(--danger); }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+
+  <!-- Only need auth.js for physics watermark + floating labels + theme toggle -->
+  <script src="/static/js/auth.js"></script>
+  <script>
+  /* ═══════════════════════════════════════════════════════════
+     MAC Worker Join — Standalone page
+     No dependency on app.js. Uses auth.js for physics + floating labels.
+     ═══════════════════════════════════════════════════════════ */
+
+  /* ── Minimal globals that auth.js expects ── */
+  var EYE_CLOSED = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>';
+  function esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+  function applyTheme(t) { document.documentElement.setAttribute('data-theme', t); localStorage.setItem('mac_theme', t); }
+  function bindEyeToggles() {} // no password fields on this page
+
+  /* Apply saved theme or default warm */
+  (function() {
+    var saved = localStorage.getItem('mac_theme') || 'warm';
+    applyTheme(saved);
+  })();
+
+  /* ── SVG icons ── */
+  var SVG_SERVER = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>';
+  var SVG_KEY   = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>';
+  var SVG_TAG   = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>';
+  var SVG_LINK  = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 7h3a5 5 0 0 1 5 5 5 5 0 0 1-5 5h-3m-6 0H6a5 5 0 0 1-5-5 5 5 0 0 1 5-5h3"/><line x1="8" y1="12" x2="16" y2="12"/></svg>';
+  var SVG_BACK  = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>';
+
+  /* ── Render the page ── */
+  function renderJoin() {
+    var themeBtn = '<button class="auth-theme-toggle" id="auth-theme-btn" onclick="toggleAuthTheme()" title="Toggle theme">' + authThemeIcon() + '</button>';
+    var wmLayer  = '<div class="wm-layer" id="wm-layer" aria-hidden="true"></div>';
+    var orbs     = '<div class="auth-orb auth-orb-1"></div><div class="auth-orb auth-orb-2"></div>';
+
+    document.getElementById('app').innerHTML = themeBtn + wmLayer + orbs +
+    '<div class="auth-page"><div class="auth-card" id="auth-card" style="max-width:440px">' +
+      '<div class="card-header">' +
+        '<h1 class="glitch mac-title" data-text="MAC">MAC</h1>' +
+        '<p class="card-sub">Join GPU Cluster · MBM AI Cloud</p>' +
+      '</div>' +
+      '<p class="view-hint">Contribute your GPU, CPU &amp; RAM to the distributed compute cluster.</p>' +
+      '<div class="auth-err" id="join-error-box" style="display:none">' +
+        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>' +
+        '<span id="join-error-msg"></span>' +
+      '</div>' +
+      '<div id="join-form" class="fl-form">' +
+        '<div class="fl-wrap" id="fl-join-ip"><label class="fl-label" for="join-ip">Admin Server IP</label>' +
+          '<div class="fl-inner"><span class="fl-icon">' + SVG_SERVER + '</span>' +
+            '<input id="join-ip" type="text" class="fl-input" placeholder=" " autocomplete="off">' +
+          '</div>' +
+        '</div>' +
+        '<div class="fl-wrap" id="fl-join-token"><label class="fl-label" for="join-token">Enrollment Token</label>' +
+          '<div class="fl-inner"><span class="fl-icon">' + SVG_KEY + '</span>' +
+            '<input id="join-token" type="text" class="fl-input" placeholder=" " autocomplete="off" style="font-family:\'Courier New\',monospace">' +
+          '</div>' +
+        '</div>' +
+        '<div class="fl-wrap" id="fl-join-name"><label class="fl-label" for="join-name">Worker Name (optional)</label>' +
+          '<div class="fl-inner"><span class="fl-icon">' + SVG_TAG + '</span>' +
+            '<input id="join-name" type="text" class="fl-input" placeholder=" " autocomplete="off">' +
+          '</div>' +
+        '</div>' +
+        '<button type="button" class="sign-btn" id="join-submit">' + SVG_LINK + '<span>Join Cluster</span></button>' +
+      '</div>' +
+      '<div id="join-status" class="join-status-wrap">' +
+        '<div id="join-status-icon" style="margin-bottom:16px"></div>' +
+        '<div id="join-status-text" style="font-size:1rem;font-weight:600"></div>' +
+        '<div id="join-status-sub" style="font-size:.82rem;color:var(--muted);margin-top:8px"></div>' +
+        '<button id="join-retry" class="alt-btn" style="display:none;margin-top:16px">Try Again</button>' +
+      '</div>' +
+      '<div class="auth-divider"><span>or</span></div>' +
+      '<a href="/" class="alt-btn">' + SVG_BACK + '<span>Back to Login</span></a>' +
+      '<div class="card-footer">' +
+        '<span class="auth-version">MAC v2.0</span>' +
+        '<span style="font-size:11px;color:var(--muted)">GPU Cluster</span>' +
+      '</div>' +
+    '</div></div>';
+
+    /* Init physics watermark + floating labels */
+    _wmInit();
+    _bindFl('fl-join-ip', 'join-ip');
+    _bindFl('fl-join-token', 'join-token');
+    _bindFl('fl-join-name', 'join-name');
+
+    /* Retry button */
+    var retryBtn = document.getElementById('join-retry');
+    if (retryBtn) retryBtn.onclick = function() {
+      document.getElementById('join-form').style.display = '';
+      document.getElementById('join-status').style.display = 'none';
+      var errBox = document.getElementById('join-error-box');
+      if (errBox) errBox.style.display = 'none';
+    };
+
+    /* Submit */
+    var btn = document.getElementById('join-submit');
+    if (btn) btn.onclick = handleJoin;
+  }
+
+  /* ── SHA-256 helper ── */
+  async function sha256(str) {
+    var buf = new TextEncoder().encode(str);
+    var hash = await crypto.subtle.digest('SHA-256', buf);
+    return Array.from(new Uint8Array(hash)).map(function(b) { return b.toString(16).padStart(2, '0'); }).join('');
+  }
+
+  /* ── Join handler ── */
+  async function handleJoin() {
+    var ip    = document.getElementById('join-ip').value.trim();
+    var token = document.getElementById('join-token').value.trim();
+    var name  = document.getElementById('join-name').value.trim() || location.hostname || 'Worker';
+    var errBox = document.getElementById('join-error-box');
+    var errMsg = document.getElementById('join-error-msg');
+
+    function showErr(msg) {
+      if (errMsg) errMsg.textContent = msg;
+      if (errBox) errBox.style.display = 'flex';
+      _shakeCard();
+    }
+
+    if (!ip) { showErr('Please enter the admin server IP'); return; }
+    if (!token) { showErr('Please enter the enrollment token'); return; }
+    if (errBox) errBox.style.display = 'none';
+
+    /* Show status */
+    document.getElementById('join-form').style.display = 'none';
+    var statusEl = document.getElementById('join-status');
+    statusEl.style.display = '';
+
+    var iconEl   = document.getElementById('join-status-icon');
+    var textEl   = document.getElementById('join-status-text');
+    var subEl    = document.getElementById('join-status-sub');
+    var retryBtn = document.getElementById('join-retry');
+
+    /* Spinner */
+    iconEl.innerHTML = '<div class="spinner" style="width:48px;height:48px;border-width:3px;margin:0 auto"></div>';
+    textEl.textContent = 'Connecting to admin server...';
+    subEl.textContent  = 'Reaching http://' + ip;
+
+    try {
+      var baseUrl = 'http://' + ip + (ip.includes(':') ? '' : ':80');
+      var tokenHash = await sha256(token);
+
+      /* Register */
+      var resp = await fetch(baseUrl + '/api/v1/cluster/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          hostname: name,
+          ip: location.hostname,
+          token_hash: tokenHash,
+          gpu_info: { name: 'Browser Registration', vram_mb: 0 },
+          cpu_cores: navigator.hardwareConcurrency || 0,
+          ram_mb: 0,
+          tags: ['browser-enrolled']
+        })
+      });
+
+      if (!resp.ok) {
+        var errData = {};
+        try { errData = await resp.json(); } catch(e) {}
+        throw new Error(errData.detail || 'Registration failed (HTTP ' + resp.status + ')');
+      }
+
+      var data = await resp.json();
+
+      if (data.status === 'pending') {
+        iconEl.innerHTML = '<div style="font-size:3rem">⏳</div>';
+        textEl.textContent = 'Waiting for Admin Approval';
+        textEl.className = 'join-pending';
+        subEl.textContent = 'Node ID: ' + data.node_id + ' — admin needs to approve in Cluster panel';
+
+        /* Poll for approval */
+        var attempts = 0;
+        var pollInterval = setInterval(async function() {
+          attempts++;
+          try {
+            var hbResp = await fetch(baseUrl + '/api/v1/cluster/heartbeat', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ node_id: data.node_id, token_hash: tokenHash, metrics: {} })
+            });
+            if (hbResp.ok) {
+              clearInterval(pollInterval);
+              iconEl.innerHTML = '<div style="font-size:3rem">✅</div>';
+              textEl.textContent = 'Approved & Connected!';
+              textEl.className = 'join-success';
+              subEl.textContent = 'Node ID: ' + data.node_id + '. Now set up the worker agent on this PC to start contributing GPU resources.';
+              retryBtn.style.display = '';
+              retryBtn.textContent = 'Done';
+              retryBtn.onclick = function() { location.href = '/'; };
+            } else if (hbResp.status === 403) {
+              subEl.textContent = 'Still waiting for admin approval... (' + (attempts * 5) + 's)';
+            }
+          } catch(e) {
+            subEl.textContent = 'Polling... (' + (attempts * 5) + 's)';
+          }
+          if (attempts > 120) {
+            clearInterval(pollInterval);
+            subEl.textContent = 'Timeout. Ask admin to approve your node in the Cluster panel.';
+            retryBtn.style.display = '';
+          }
+        }, 5000);
+      } else {
+        iconEl.innerHTML = '<div style="font-size:3rem">✅</div>';
+        textEl.textContent = 'Connected!';
+        textEl.className = 'join-success';
+        subEl.textContent = 'Node ID: ' + data.node_id + '. Status: ' + data.status;
+      }
+    } catch (err) {
+      iconEl.innerHTML = '<div style="font-size:3rem">❌</div>';
+      textEl.textContent = 'Connection Failed';
+      textEl.className = 'join-fail';
+      subEl.textContent = err.message || 'Could not reach the admin server. Check the IP address.';
+      retryBtn.style.display = '';
+    }
+  }
+
+  /* Boot */
+  renderJoin();
+  </script>
+</body>
+</html>

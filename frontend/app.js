@@ -1,4 +1,4 @@
-﻿/* 
+/* 
    MAC "" MBM AI Cloud  &middot;  PWA Frontend  v3
    Premium Dashboard Edition
     */
@@ -72,14 +72,18 @@ function _applyFeatureGate() {
     const flag = GATE_MAP[a.dataset.page];
     if (flag) a.style.display = flagOn(flag) ? '' : 'none';
   });
-  // If current page is now disabled, redirect to dashboard
   const cur = state.page;
   if (cur && GATE_MAP[cur] && !flagOn(GATE_MAP[cur])) navigate('dashboard');
+  // Enforce dark_mode flag: hide dark theme option and revert if active
+  const darkDot = document.querySelector('.theme-dot[data-theme="dark"]');
+  if (darkDot) darkDot.style.display = flagOn('dark_mode') ? '' : 'none';
+  if (!flagOn('dark_mode') && document.documentElement.getAttribute('data-theme') === 'dark') {
+    applyTheme('warm');
+  }
 }
 
 // —— PWA install prompt capture ————————————————————————————
 window.addEventListener('beforeinstallprompt', e => {
-  e.preventDefault();
   deferredInstallPrompt = e;
   const btn = document.getElementById('pwa-install-btn');
   if (btn) btn.style.display = '';
@@ -89,6 +93,21 @@ window.addEventListener('appinstalled', () => {
   const btn = document.getElementById('pwa-install-btn');
   if (btn) btn.style.display = 'none';
 });
+
+// —— Cert install banner for LAN devices on HTTP ——————————
+(function _certBannerCheck() {
+  const isHTTPS = location.protocol === 'https:';
+  const isLocalhost = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+  if (!isHTTPS && !isLocalhost && !sessionStorage.getItem('mac_cert_dismissed')) {
+    window.addEventListener('DOMContentLoaded', () => {
+      const bar = document.createElement('div');
+      bar.id = 'cert-banner';
+      bar.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#D4834A;color:#fff;padding:10px 16px;font-size:13px;display:flex;align-items:center;justify-content:space-between;font-family:Inter,sans-serif;';
+      bar.innerHTML = '<span>Install the MAC certificate to enable app install &amp; HTTPS. <a href="/install-cert" style="color:#fff;font-weight:700;text-decoration:underline">Install Certificate</a></span><button onclick="this.parentElement.remove();sessionStorage.setItem(\'mac_cert_dismissed\',\'1\')" style="background:none;border:none;color:#fff;font-size:18px;cursor:pointer;padding:0 4px">&times;</button>';
+      document.body.prepend(bar);
+    });
+  }
+})();
 
 async function api(path, opts = {}) {
   const headers = { ...(opts.headers || {}) };
@@ -162,9 +181,9 @@ function bindEyeToggles(root) {
 
 // —— Theme —————————————————————————————————————————————————
 function applyTheme(theme) {
+  if (theme === 'dark' && !flagOn('dark_mode')) theme = 'warm';
   document.documentElement.setAttribute('data-theme', theme);
   localStorage.setItem('mac_theme', theme);
-  // Sync Monaco editor theme
   if (window.monaco) {
     const isDark = theme === 'dark';
     monaco.editor.setTheme(isDark ? 'vs-dark' : 'vs');
@@ -206,7 +225,17 @@ window.addEventListener('popstate', () => {
 
 // —— Bootstrap —————————————————————————————————————————————
 async function init() {
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('/static/sw.js', {scope: '/'});
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js', {scope: '/'})
+      .then(reg => console.log('[MAC] SW registered, scope:', reg.scope))
+      .catch(err => console.warn('[MAC] SW registration failed:', err));
+  }
+  // Worker join page — no auth required
+  if (location.hash === '#join' || location.pathname === '/join') {
+    state.page = 'join';
+    render();
+    return;
+  }
   if (state.token) {
     try {
       const u = await apiJson('/auth/me');
@@ -238,10 +267,18 @@ async function init() {
 }
 
 let _dashRefreshIv = null;
+let _renderRaf = null;
+function scheduleRender() {
+  if (_renderRaf) return;
+  _renderRaf = requestAnimationFrame(() => { _renderRaf = null; render(); });
+}
 function render() {
   // Clear dashboard auto-refresh when navigating away
   if (_dashRefreshIv) { clearInterval(_dashRefreshIv); _dashRefreshIv = null; }
+  if (window._clusterRefreshIv) { clearInterval(window._clusterRefreshIv); window._clusterRefreshIv = null; }
   const app = document.getElementById('app');
+  // Worker join page — no auth required
+  if (state.page === 'join') { app.innerHTML = workerJoinPage(); bindWorkerJoin(); return; }
   if (!state.token || state.page === 'login') { app.innerHTML = authPage(); bindAuth(); runIntroIfNeeded(); return; }
   if (state.user && state.user.must_change_password) {
     state.page = 'set-password';
@@ -2257,10 +2294,11 @@ async function renderAdminRegistry() {
     const regTab = localStorage.getItem('mac_reg_tab') || 'student';
 
     function tableRows(list) {
-      if (!list.length) return `<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:24px">No entries</td></tr>`;
+      if (!list.length) return `<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px">No entries</td></tr>`;
       return list.map(e => `
         <tr>
           <td class="mono bold">${esc(e.roll_number)}</td>
+          <td class="mono" style="font-size:.85rem">${esc(e.registration_number || '-')}</td>
           <td>${esc(e.name)}</td>
           <td>${esc(e.department)}</td>
           <td>${esc(e.dob)}</td>
@@ -2294,7 +2332,7 @@ async function renderAdminRegistry() {
       </div>
       <div class="table-responsive">
       <table class="data-table">
-        <thead><tr><th>Roll / Email</th><th>Name</th><th>Dept</th><th>DOB</th><th>Batch</th></tr></thead>
+        <thead><tr><th>Roll / Email</th><th>Reg. No.</th><th>Name</th><th>Dept</th><th>DOB</th><th>Batch</th></tr></thead>
         <tbody id="reg-table-body">
           ${tableRows(regTab === 'student' ? students : regTab === 'faculty' ? faculty : admins)}
         </tbody>
@@ -2327,6 +2365,7 @@ async function renderAdminRegistry() {
             </select>
           </div>
           <div class="field"><label>Roll No / Employee ID / Email</label><input id="rg-roll" placeholder="e.g. 23CS050 or prof@mbm.ac.in"></div>
+          <div class="field"><label>Registration Number</label><input id="rg-reg" placeholder="e.g. J2234345A (optional)"></div>
           <div class="field"><label>Full Name</label><input id="rg-name" placeholder="Full name"></div>
           <div class="field"><label>Department</label>
             <select id="rg-dept"><option>CSE</option><option>ECE</option><option>ME</option><option>CE</option><option>EE</option><option>Other</option></select>
@@ -2347,6 +2386,7 @@ async function renderAdminRegistry() {
         err.textContent = '';
         const body = {
           roll_number: overlay.querySelector('#rg-roll').value.trim(),
+          registration_number: overlay.querySelector('#rg-reg').value.trim() || null,
           name: overlay.querySelector('#rg-name').value.trim(),
           department: overlay.querySelector('#rg-dept').value,
           dob: overlay.querySelector('#rg-dob').value.trim(),
@@ -2470,53 +2510,232 @@ async function renderAdminRegistry() {
 async function renderAdminCluster() {
   const el = document.getElementById('admin-content');
   try {
-    const data = await apiJson('/nodes');
-    const nodes = data.nodes || [];
-    el.innerHTML = `
-      <div class="admin-header">
-        <h2>GPU Cluster <span class="badge" class="badge-neutral" style="font-size:.75rem;vertical-align:middle">${nodes.length} nodes</span></h2>
-        <button class="btn btn-sm btn-primary" id="gen-enroll-token" style="width:auto;padding:8px 16px">+ Enrollment Token</button>
-      </div>
-      <div class="nodes-grid">
-        ${nodes.length === 0 ? '<div class="empty-state"><p>No worker nodes enrolled yet. Generate an enrollment token to add GPU workers.</p></div>' : nodes.map(n => `
-          <div class="node-card">
-            <div class="node-card-header">
-              <span class="node-name">${esc(n.name)}</span>
-              <span class="node-status ${n.status === 'online' ? 'online' : n.status === 'draining' ? 'draining' : 'offline'}">${esc(n.status)}</span>
-            </div>
-            <div style="font-size:.75rem;color:var(--muted);margin-bottom:8px">${esc(n.ip_address || '')}:${n.port || ''} &middot; ${esc(n.gpu_name || 'Unknown GPU')} &middot; ${n.gpu_vram_mb ? Math.round(n.gpu_vram_mb/1024) + 'GB VRAM' : ''}</div>
-            <div class="node-metrics">
-              <div class="node-metric"><span class="metric-val">${n.gpu_util_pct != null ? n.gpu_util_pct + '%' : '--'}</span><span class="metric-lbl">GPU</span></div>
-              <div class="node-metric"><span class="metric-val">${n.cpu_util_pct != null ? n.cpu_util_pct + '%' : '--'}</span><span class="metric-lbl">CPU</span></div>
-              <div class="node-metric"><span class="metric-val">${n.ram_used_mb && n.ram_total_mb ? Math.round(n.ram_used_mb/n.ram_total_mb*100) + '%' : '--'}</span><span class="metric-lbl">RAM</span></div>
-              <div class="node-metric"><span class="metric-val">${n.gpu_vram_used_mb && n.gpu_vram_mb ? Math.round(n.gpu_vram_used_mb/n.gpu_vram_mb*100) + '%' : '--'}</span><span class="metric-lbl">VRAM</span></div>
-            </div>
-            <div style="margin-top:12px;display:flex;gap:6px">
-              ${n.status === 'online' ? `<button class="btn btn-sm btn-outline drain-node" data-id="${n.id}">Drain</button>` : ''}
-              ${n.status === 'draining' || n.status === 'offline' ? `<button class="btn btn-sm btn-outline activate-node" data-id="${n.id}">Activate</button>` : ''}
-              <button class="btn btn-sm btn-danger-outline remove-node" data-id="${n.id}">Remove</button>
-            </div>
-          </div>
-        `).join('')}
-      </div>`;
+    const [nodesData, clusterData, tokensData] = await Promise.all([
+      apiJson('/cluster/nodes').catch(() => []),
+      apiJson('/nodes/cluster-status').catch(() => ({})),
+      apiJson('/cluster/enroll-tokens').catch(() => []),
+    ]);
+    const nodes = Array.isArray(nodesData) ? nodesData : (nodesData.nodes || []);
+    const tokens = Array.isArray(tokensData) ? tokensData : [];
+    const pending = nodes.filter(n => n.status === 'pending');
+    const active = nodes.filter(n => n.status === 'active');
+    const other = nodes.filter(n => n.status !== 'pending' && n.status !== 'active');
+    const joinUrl = `${location.origin}/join`;
 
+    el.innerHTML = `
+      <div class="admin-header" style="flex-wrap:wrap;gap:12px">
+        <h2>GPU Cluster <span class="badge" style="font-size:.75rem;vertical-align:middle">${nodes.length} nodes</span></h2>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-sm btn-primary" id="gen-enroll-token" style="width:auto;padding:8px 16px">+ Generate Token</button>
+          <button class="btn btn-sm btn-outline" id="refresh-cluster" style="width:auto;padding:8px 16px">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+            Refresh
+          </button>
+        </div>
+      </div>
+
+      <!-- Worker Join Info -->
+      <div class="card" style="margin-bottom:20px;padding:16px 20px;background:linear-gradient(135deg,rgba(99,102,241,.08),rgba(168,85,247,.08));border:1px solid rgba(99,102,241,.2);border-radius:14px">
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+          <div>
+            <div style="font-weight:700;font-size:.9rem">Worker Join URL</div>
+            <div style="font-size:.8rem;color:var(--muted)">Share this URL with worker PCs to contribute GPU resources</div>
+          </div>
+          <code class="mono" style="flex:1;min-width:200px;padding:8px 14px;background:var(--bg);border:1px solid var(--border);border-radius:8px;font-size:.85rem;word-break:break-all">${esc(joinUrl)}</code>
+          <button class="btn btn-sm btn-outline" onclick="navigator.clipboard.writeText('${esc(joinUrl)}');this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)" style="width:auto;padding:6px 14px">Copy</button>
+        </div>
+      </div>
+
+      ${pending.length > 0 ? `
+      <!-- Pending Approvals -->
+      <div style="margin-bottom:24px">
+        <h3 style="margin-bottom:12px;color:var(--warning,#f59e0b)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:6px"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          Pending Approval (${pending.length})
+        </h3>
+        <div class="nodes-grid">
+          ${pending.map(n => `
+            <div class="node-card" style="border-left:3px solid var(--warning,#f59e0b)">
+              <div class="node-card-header">
+                <span class="node-name">${esc(n.name || n.hostname || 'Worker')}</span>
+                <span class="node-status" style="color:var(--warning,#f59e0b)">Pending</span>
+              </div>
+              <div style="font-size:.78rem;color:var(--muted);margin-bottom:8px">
+                ${esc(n.ip || n.ip_address || '')} &middot; ${esc(n.gpu_name || 'GPU Unknown')}
+                ${n.gpu_vram_total_mb || n.gpu_vram_mb ? ' &middot; ' + Math.round((n.gpu_vram_total_mb || n.gpu_vram_mb)/1024) + 'GB VRAM' : ''}
+                ${n.cpu_cores ? ' &middot; ' + n.cpu_cores + ' cores' : ''}
+                ${n.ram_total_mb ? ' &middot; ' + Math.round(n.ram_total_mb/1024) + 'GB RAM' : ''}
+              </div>
+              <div style="display:flex;gap:8px;margin-top:10px">
+                <button class="btn btn-sm btn-primary approve-node" data-id="${n.id}" style="width:auto;padding:6px 18px">Approve</button>
+                <button class="btn btn-sm btn-danger-outline reject-node" data-id="${n.id}" style="width:auto;padding:6px 14px">Reject</button>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+      ` : ''}
+
+      <!-- Active Nodes -->
+      <div style="margin-bottom:24px">
+        <h3 style="margin-bottom:12px">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--success,#22c55e)" stroke-width="2" style="vertical-align:middle;margin-right:6px"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          Active Nodes (${active.length})
+        </h3>
+        <div class="nodes-grid">
+          ${active.length === 0 ? '<div class="empty-state" style="padding:20px"><p>No active nodes. Generate an enrollment token and set up worker PCs to add GPU resources.</p></div>' : active.map(n => `
+            <div class="node-card" style="border-left:3px solid var(--success,#22c55e)">
+              <div class="node-card-header">
+                <span class="node-name">${esc(n.name || n.hostname || 'Worker')}</span>
+                <span class="node-status" style="color:${n.healthy ? 'var(--success,#22c55e)' : 'var(--danger,#ef4444)'}">${n.healthy ? 'Healthy' : 'Stale'}</span>
+              </div>
+              <div style="font-size:.78rem;color:var(--muted);margin-bottom:10px">
+                ${esc(n.ip || n.ip_address || '')} &middot; ${esc(n.gpu_name || 'GPU Unknown')}
+                ${n.gpu_vram_total_mb ? ' &middot; ' + Math.round(n.gpu_vram_total_mb/1024) + 'GB' : ''}
+                ${n.heartbeat_age_s != null ? ' &middot; Last heartbeat: ' + Math.round(n.heartbeat_age_s) + 's ago' : ''}
+              </div>
+              <div class="node-metrics">
+                <div class="node-metric"><span class="metric-val">${n.gpu_util_pct != null ? Math.round(n.gpu_util_pct) + '%' : '--'}</span><span class="metric-lbl">GPU</span></div>
+                <div class="node-metric"><span class="metric-val">${n.cpu_util_pct != null ? Math.round(n.cpu_util_pct) + '%' : '--'}</span><span class="metric-lbl">CPU</span></div>
+                <div class="node-metric"><span class="metric-val">${n.ram_used_mb && n.ram_total_mb ? Math.round(n.ram_used_mb/n.ram_total_mb*100) + '%' : '--'}</span><span class="metric-lbl">RAM</span></div>
+                <div class="node-metric"><span class="metric-val">${n.gpu_vram_used_mb && n.gpu_vram_total_mb ? Math.round(n.gpu_vram_used_mb/n.gpu_vram_total_mb*100) + '%' : '--'}</span><span class="metric-lbl">VRAM</span></div>
+              </div>
+              ${(n.models || []).length > 0 ? `
+                <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">
+                  ${n.models.map(m => `<span class="badge" style="font-size:.7rem;padding:2px 8px;background:rgba(99,102,241,.12);color:var(--primary)">${esc(m.model_id)} (${m.status})</span>`).join('')}
+                </div>
+              ` : ''}
+              <div style="margin-top:12px;display:flex;gap:6px">
+                <button class="btn btn-sm btn-outline drain-node" data-id="${n.id}" style="width:auto;padding:5px 12px;font-size:.75rem">Drain</button>
+                <button class="btn btn-sm btn-danger-outline remove-node" data-id="${n.id}" style="width:auto;padding:5px 12px;font-size:.75rem">Remove</button>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+
+      ${other.length > 0 ? `
+      <!-- Draining / Other Nodes -->
+      <div style="margin-bottom:24px">
+        <h3 style="margin-bottom:12px;color:var(--muted)">Other Nodes (${other.length})</h3>
+        <div class="nodes-grid">
+          ${other.map(n => `
+            <div class="node-card" style="opacity:.7;border-left:3px solid var(--muted)">
+              <div class="node-card-header">
+                <span class="node-name">${esc(n.name || n.hostname || 'Worker')}</span>
+                <span class="node-status" style="color:var(--muted)">${esc(n.status)}</span>
+              </div>
+              <div style="font-size:.78rem;color:var(--muted)">${esc(n.ip || n.ip_address || '')}</div>
+              <div style="margin-top:10px;display:flex;gap:6px">
+                <button class="btn btn-sm btn-outline activate-node" data-id="${n.id}" style="width:auto;padding:5px 12px;font-size:.75rem">Reactivate</button>
+                <button class="btn btn-sm btn-danger-outline remove-node" data-id="${n.id}" style="width:auto;padding:5px 12px;font-size:.75rem">Remove</button>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+      ` : ''}
+
+      <!-- Enrollment Tokens -->
+      ${tokens.length > 0 ? `
+      <div style="margin-top:16px">
+        <h3 style="margin-bottom:12px">Recent Enrollment Tokens</h3>
+        <div class="table-responsive">
+        <table class="data-table">
+          <thead><tr><th>Label</th><th>Used</th><th>Expires</th><th>Created</th></tr></thead>
+          <tbody>
+            ${tokens.slice(0, 10).map(t => `
+              <tr>
+                <td>${esc(t.label)}</td>
+                <td>${t.used ? '<span class="dot-success"></span> Yes' : '<span class="dot-error"></span> No'}</td>
+                <td class="muted">${new Date(t.expires_at).toLocaleString()}</td>
+                <td class="muted">${t.created_at ? new Date(t.created_at).toLocaleString() : '--'}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+        </div>
+      </div>
+      ` : ''}
+    `;
+
+    // Bind: Generate enrollment token
     document.getElementById('gen-enroll-token').onclick = async () => {
-      const label = prompt('Label for this token (e.g. "PC3-GPU"):');
+      const label = prompt('Label for this token (e.g. "Lab-PC3-GPU"):');
       if (!label) return;
       try {
-        const r = await apiJson('/nodes/enrollment-token', { method: 'POST', body: JSON.stringify({ label, expires_in_hours: 24 }) });
-        alert('Enrollment Token (use within 24h):\\n\\n' + r.token + '\\n\\nLabel: ' + r.label);
+        const r = await apiJson('/cluster/enroll-token', { method: 'POST', body: JSON.stringify({ label, expires_hours: 24 }) });
+        const tokenStr = r.token;
+        // Show token in a nice modal
+        const ov = document.createElement('div');
+        ov.className = 'modal-overlay';
+        ov.innerHTML = `
+          <div class="modal" style="max-width:500px">
+            <h3 style="margin-bottom:12px">Enrollment Token Generated</h3>
+            <p style="font-size:.85rem;color:var(--muted);margin-bottom:12px">Share this token with the worker PC. It expires in 24 hours and can only be used once.</p>
+            <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:14px">
+              <div style="font-size:.75rem;color:var(--muted);margin-bottom:4px">Token (copy this)</div>
+              <code class="mono" style="font-size:.85rem;word-break:break-all;display:block">${esc(tokenStr)}</code>
+            </div>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-sm btn-primary" onclick="navigator.clipboard.writeText('${esc(tokenStr)}');this.textContent='Copied!'" style="width:auto;padding:8px 20px">Copy Token</button>
+              <button class="btn btn-sm btn-outline" onclick="this.closest('.modal-overlay').remove()" style="width:auto;padding:8px 20px">Close</button>
+            </div>
+          </div>`;
+        ov.onclick = e => { if (e.target === ov) ov.remove(); };
+        document.body.appendChild(ov);
       } catch (ex) { alert('Failed: ' + ex.message); }
     };
+
+    // Bind: Refresh
+    document.getElementById('refresh-cluster').onclick = () => renderAdminCluster();
+
+    // Bind: Approve pending
+    el.querySelectorAll('.approve-node').forEach(btn => {
+      btn.onclick = async () => {
+        try {
+          await api('/cluster/nodes/' + btn.dataset.id + '/action', { method: 'POST', body: JSON.stringify({ action: 'approve' }) });
+          renderAdminCluster();
+        } catch { alert('Failed to approve'); }
+      };
+    });
+    // Bind: Reject pending
+    el.querySelectorAll('.reject-node').forEach(btn => {
+      btn.onclick = async () => {
+        if (!confirm('Reject and remove this node?')) return;
+        try {
+          await api('/cluster/nodes/' + btn.dataset.id + '/action', { method: 'POST', body: JSON.stringify({ action: 'remove' }) });
+          renderAdminCluster();
+        } catch { alert('Failed'); }
+      };
+    });
+    // Bind: Drain
     el.querySelectorAll('.drain-node').forEach(btn => {
-      btn.onclick = async () => { try { await api('/nodes/' + btn.dataset.id + '/drain', { method: 'POST' }); renderAdmin(); } catch { alert('Failed'); } };
+      btn.onclick = async () => {
+        try { await api('/cluster/nodes/' + btn.dataset.id + '/action', { method: 'POST', body: JSON.stringify({ action: 'drain' }) }); renderAdminCluster(); } catch { alert('Failed'); }
+      };
     });
+    // Bind: Activate
     el.querySelectorAll('.activate-node').forEach(btn => {
-      btn.onclick = async () => { try { await api('/nodes/' + btn.dataset.id + '/activate', { method: 'POST' }); renderAdmin(); } catch { alert('Failed'); } };
+      btn.onclick = async () => {
+        try { await api('/cluster/nodes/' + btn.dataset.id + '/action', { method: 'POST', body: JSON.stringify({ action: 'reactivate' }) }); renderAdminCluster(); } catch { alert('Failed'); }
+      };
     });
+    // Bind: Remove
     el.querySelectorAll('.remove-node').forEach(btn => {
-      btn.onclick = async () => { if (!confirm('Remove this node?')) return; try { await api('/nodes/' + btn.dataset.id, { method: 'DELETE' }); renderAdmin(); } catch { alert('Failed'); } };
+      btn.onclick = async () => {
+        if (!confirm('Remove this node permanently?')) return;
+        try { await api('/cluster/nodes/' + btn.dataset.id + '/action', { method: 'POST', body: JSON.stringify({ action: 'remove' }) }); renderAdminCluster(); } catch { alert('Failed'); }
+      };
     });
+
+    // Auto-refresh every 15 seconds when cluster tab is active
+    if (window._clusterRefreshIv) clearInterval(window._clusterRefreshIv);
+    window._clusterRefreshIv = setInterval(() => {
+      if (adminTab === 'cluster' && state.page === 'admin') renderAdminCluster();
+    }, 15000);
+
   } catch (ex) { el.innerHTML = `<div class="error-state"><p>Error: ${esc(ex.message)}</p></div>`; }
 }
 
@@ -4100,6 +4319,13 @@ async function renderFileShare() {
 
   await _loadFileList();
 
+  // Auto-refresh file list every 15 seconds for real-time updates
+  if (window._fsRefreshIv) clearInterval(window._fsRefreshIv);
+  window._fsRefreshIv = setInterval(() => {
+    if (state.page === 'fileshare') _loadFileList();
+    else { clearInterval(window._fsRefreshIv); window._fsRefreshIv = null; }
+  }, 15000);
+
   async function _loadFileList() {
     const listEl = document.getElementById('fs-list');
     if (!listEl) return;
@@ -4123,10 +4349,10 @@ async function renderFileShare() {
               <td style="font-size:.78rem;color:var(--muted)">${timeAgo(f.created_at)}</td>
               <td style="font-size:.82rem">${f.download_count || 0}</td>
               <td>
-                <a href="${API}/files/${esc(f.id)}/download" class="btn btn-sm btn-outline" download="${esc(f.display_name || f.filename)}">
+                <button class="btn btn-sm btn-outline" onclick="_fsDownload('${esc(f.id)}','${esc(f.display_name || f.filename)}')">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                   Download
-                </a>
+                </button>
                 ${isAdmin ? `<button class="btn btn-sm btn-danger-outline" style="margin-left:4px" onclick="_fsDelete('${esc(f.id)}')">Delete</button>` : ''}
               </td>
             </tr>`).join('')}
@@ -4137,6 +4363,18 @@ async function renderFileShare() {
     }
   }
 }
+
+window._fsDownload = async (fileId, fileName) => {
+  try {
+    const r = await api(`/files/${fileId}/download`);
+    if (!r.ok) { showToast('Download failed', 'error'); return; }
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = fileName; a.click();
+    URL.revokeObjectURL(url);
+  } catch { showToast('Download failed', 'error'); }
+};
 
 window._fsDelete = async (fileId) => {
   if (!confirm('Delete this shared file?')) return;
@@ -4193,7 +4431,7 @@ function _loadMonaco() {
       resolve();
       return;
     }
-    require.config({ paths: { 'vs': 'https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs' } });
+    require.config({ paths: { 'vs': '/static/libs/monaco-editor/min/vs' } });
     require(['vs/editor/editor.main'], () => resolve());
   });
   return _monacoPromise;
@@ -4217,7 +4455,7 @@ async function _nbInitMonacoEditors() {
   await _loadMonaco();
   if (!window.monaco) return; // fallback: textareas stay as-is
 
-  const isDark = document.body.classList.contains('theme-dark') || !document.body.classList.contains('theme-light');
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
   const monacoTheme = isDark ? 'vs-dark' : 'vs';
 
   document.querySelectorAll('.nb-code-editor[data-cell]').forEach(textarea => {
@@ -4557,7 +4795,7 @@ function _nbConnectWs() {
   if (_nbState.ws && _nbState.ws.readyState <= 1) return;
   if (!_nbState.current) return;
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const url = `${proto}//${location.host}/ws/notebook/${_nbState.current}`;
+  const url = `${proto}//${location.host}/ws/notebook/${_nbState.current}?token=${encodeURIComponent(state.token)}`;
   const ws = new WebSocket(url);
   ws.onopen = () => { _nbState.ws = ws; };
   ws.onmessage = (e) => {
@@ -5591,5 +5829,225 @@ const _origRender = render;
 window._bgCheck = () => {
   if (!document.getElementById('bg-canvas')) initBgCanvas();
 };
+
+/* ═══════════════════════════════════════════════════════════
+   WORKER JOIN PAGE — Standalone page for contributing GPU resources
+   Accessible at /#join or /join — no auth required
+   ═══════════════════════════════════════════════════════════ */
+
+function workerJoinPage() {
+  /* Uses the exact same design system as the login page:
+     auth-page + auth-card + glitch title + floating labels + sign-btn + physics watermark */
+  var themeBtn = '<button class="auth-theme-toggle" id="auth-theme-btn" onclick="toggleAuthTheme()" title="Toggle theme">' + authThemeIcon() + '</button>';
+  var wmLayer  = '<div class="wm-layer" id="wm-layer" aria-hidden="true"></div>';
+  var orbs     = '<div class="auth-orb auth-orb-1"></div><div class="auth-orb auth-orb-2"></div>';
+
+  var _SVG_SERVER = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>';
+  var _SVG_KEY = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>';
+  var _SVG_TAG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>';
+  var _SVG_LINK = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 7h3a5 5 0 0 1 5 5 5 5 0 0 1-5 5h-3m-6 0H6a5 5 0 0 1-5-5 5 5 0 0 1 5-5h3"/><line x1="8" y1="12" x2="16" y2="12"/></svg>';
+
+  return themeBtn + wmLayer + orbs +
+  '<div class="auth-page"><div class="auth-card" id="auth-card" style="max-width:440px">' +
+    '<div class="card-header">' +
+      '<h1 class="glitch mac-title" data-text="MAC">MAC</h1>' +
+      '<p class="card-sub">Join GPU Cluster · MBM AI Cloud</p>' +
+    '</div>' +
+    '<p class="view-hint">Contribute your GPU, CPU \u0026 RAM to the distributed compute cluster.</p>' +
+    '<div class="auth-err" id="join-error-box" style="display:none">' +
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>' +
+      '<span id="join-error-msg"></span>' +
+    '</div>' +
+    '<div id="join-form" class="fl-form">' +
+      '<div class="fl-wrap" id="fl-join-ip"><label class="fl-label" for="join-ip">Admin Server IP</label>' +
+        '<div class="fl-inner"><span class="fl-icon">' + _SVG_SERVER + '</span>' +
+          '<input id="join-ip" type="text" class="fl-input" placeholder=" " autocomplete="off">' +
+        '</div>' +
+      '</div>' +
+      '<div class="fl-wrap" id="fl-join-token"><label class="fl-label" for="join-token">Enrollment Token</label>' +
+        '<div class="fl-inner"><span class="fl-icon">' + _SVG_KEY + '</span>' +
+          '<input id="join-token" type="text" class="fl-input" placeholder=" " autocomplete="off" style="font-family:\'Courier New\',monospace">' +
+        '</div>' +
+      '</div>' +
+      '<div class="fl-wrap" id="fl-join-name"><label class="fl-label" for="join-name">Worker Name (optional)</label>' +
+        '<div class="fl-inner"><span class="fl-icon">' + _SVG_TAG + '</span>' +
+          '<input id="join-name" type="text" class="fl-input" placeholder=" " autocomplete="off">' +
+        '</div>' +
+      '</div>' +
+      '<button type="button" class="sign-btn" id="join-submit">' + _SVG_LINK + '<span>Join Cluster</span></button>' +
+    '</div>' +
+    '<div id="join-status" style="display:none;text-align:center;padding:24px 0">' +
+      '<div id="join-status-icon" style="margin-bottom:16px"></div>' +
+      '<div id="join-status-text" style="font-size:1rem;font-weight:600"></div>' +
+      '<div id="join-status-sub" style="font-size:.82rem;color:var(--muted);margin-top:8px"></div>' +
+      '<button id="join-retry" class="alt-btn" style="display:none;margin-top:16px">Try Again</button>' +
+    '</div>' +
+    '<div class="auth-divider"><span>or</span></div>' +
+    '<a href="/#login" class="alt-btn" onclick="navigate(\'login\');return false">' + _SVG_BACK + '<span>Back to Login</span></a>' +
+    '<div class="card-footer">' +
+      '<span class="auth-version">MAC v2.0</span>' +
+      '<span style="font-size:11px;color:var(--muted)">GPU Cluster</span>' +
+    '</div>' +
+  '</div></div>';
+}
+
+function bindWorkerJoin() {
+  const btn = document.getElementById('join-submit');
+  if (!btn) return;
+
+  /* Init physics watermark + floating labels — same as login page */
+  _wmInit();
+  _bindFl('fl-join-ip', 'join-ip');
+  _bindFl('fl-join-token', 'join-token');
+  _bindFl('fl-join-name', 'join-name');
+
+  /* Retry button */
+  var retryBtnEl = document.getElementById('join-retry');
+  if (retryBtnEl) retryBtnEl.onclick = function() {
+    document.getElementById('join-form').style.display = '';
+    document.getElementById('join-status').style.display = 'none';
+    var errBox = document.getElementById('join-error-box');
+    if (errBox) errBox.style.display = 'none';
+  };
+
+  btn.onclick = async () => {
+    const ip = document.getElementById('join-ip').value.trim();
+    const token = document.getElementById('join-token').value.trim();
+    const name = document.getElementById('join-name').value.trim() || location.hostname || 'Worker';
+    const errBox = document.getElementById('join-error-box');
+    const errMsg = document.getElementById('join-error-msg');
+
+    function showJoinErr(msg) {
+      if (errMsg) errMsg.textContent = msg;
+      if (errBox) errBox.style.display = 'flex';
+      _shakeCard();
+    }
+
+    if (!ip) { showJoinErr('Please enter the admin server IP'); return; }
+    if (!token) { showJoinErr('Please enter the enrollment token'); return; }
+    if (errBox) errBox.style.display = 'none';
+
+    // Show status
+    document.getElementById('join-form').style.display = 'none';
+    const statusEl = document.getElementById('join-status');
+    statusEl.style.display = '';
+
+    const iconEl = document.getElementById('join-status-icon');
+    const textEl = document.getElementById('join-status-text');
+    const subEl = document.getElementById('join-status-sub');
+    const retryBtn = document.getElementById('join-retry');
+
+    // Spinner animation (uses theme vars)
+    iconEl.innerHTML = '<div class="spinner" style="width:48px;height:48px;border-width:3px;margin:0 auto"></div>';
+    textEl.textContent = 'Connecting to admin server...';
+    subEl.textContent = `Reaching http://${ip}`;
+
+    const baseUrl = ip.includes('://') ? ip : `http://${ip}`;
+    const apiBase = `${baseUrl}/api/v1`;
+
+    try {
+      // Step 1: Register with the cluster
+      textEl.textContent = 'Registering with cluster...';
+      subEl.textContent = 'Sending hardware info and enrollment token';
+
+      const payload = {
+        enrollment_token: token,
+        name: name,
+        hostname: location.hostname || 'browser-worker',
+        ip_address: location.hostname || '0.0.0.0',
+        port: 8001,
+        gpu_name: 'Browser-detected (manual setup needed)',
+        tags: 'llm',
+      };
+
+      const resp = await fetch(`${apiBase}/cluster/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ detail: { message: resp.statusText } }));
+        throw new Error(err.detail?.message || err.message || `Server returned ${resp.status}`);
+      }
+
+      const data = await resp.json();
+
+      if (data.status === 'pending') {
+        iconEl.innerHTML = '<div style="font-size:3rem">⏳</div>';
+        textEl.textContent = 'Registration received!';
+        subEl.textContent = 'Waiting for admin approval... (this page will update automatically)';
+
+        // Poll for approval
+        let attempts = 0;
+        const pollInterval = setInterval(async () => {
+          attempts++;
+          try {
+            // Try to heartbeat — if approved, this will work
+            const hbResp = await fetch(`${apiBase}/cluster/heartbeat`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                node_id: data.node_id,
+                node_token: await _sha256(token),
+                gpu_util_pct: 0,
+                cpu_util_pct: 0,
+                active_models: [],
+              }),
+            });
+
+            if (hbResp.ok) {
+              clearInterval(pollInterval);
+              iconEl.innerHTML = '<div style="font-size:3rem">✅</div>';
+              textEl.textContent = 'Connected to cluster!';
+              textEl.style.color = '#4ade80';
+              subEl.textContent = `Node ID: ${data.node_id}. Now set up the worker agent on this PC to start contributing GPU resources.`;
+              retryBtn.style.display = '';
+              retryBtn.textContent = 'Done';
+              retryBtn.onclick = () => location.href = '/';
+            } else if (hbResp.status === 403) {
+              subEl.textContent = `Still waiting for admin approval... (${attempts * 5}s)`;
+            }
+          } catch {
+            subEl.textContent = `Polling... (${attempts * 5}s)`;
+          }
+          if (attempts > 120) { // 10 min timeout
+            clearInterval(pollInterval);
+            subEl.textContent = 'Timeout. Ask admin to approve your node in the Cluster panel.';
+            retryBtn.style.display = '';
+          }
+        }, 5000);
+
+      } else {
+        iconEl.innerHTML = '<div style="font-size:3rem">✅</div>';
+        textEl.textContent = 'Connected!';
+        textEl.style.color = '#4ade80';
+        subEl.textContent = `Node ID: ${data.node_id}. Status: ${data.status}`;
+      }
+
+    } catch (err) {
+      iconEl.innerHTML = '<div style="font-size:3rem">❌</div>';
+      textEl.textContent = 'Connection Failed';
+      textEl.style.color = '#f87171';
+      subEl.textContent = err.message || 'Could not reach the admin server. Check the IP address.';
+      retryBtn.style.display = '';
+    }
+  };
+}
+
+// Helper: SHA-256 hash in browser
+async function _sha256(str) {
+  const buf = new TextEncoder().encode(str);
+  const hash = await crypto.subtle.digest('SHA-256', buf);
+  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// Add spin animation for join page
+if (!document.getElementById('join-spin-style')) {
+  const s = document.createElement('style');
+  s.id = 'join-spin-style';
+  s.textContent = '@keyframes spin{to{transform:rotate(360deg)}}';
+  document.head.appendChild(s);
+}
 
 init();

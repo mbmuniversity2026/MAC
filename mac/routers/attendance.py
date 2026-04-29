@@ -127,6 +127,58 @@ async def list_subjects():
     return {"subjects": DEFAULT_SUBJECTS}
 
 
+# ── Student: Today's Sessions ────────────────────────────────
+
+@router.get("/my-today")
+async def my_today(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Student view: today's sessions for their department, with already_marked flags."""
+    from mac.models.attendance import AttendanceSession, AttendanceRecord
+    cfg = await _get_settings(db)
+    now = datetime.now(IST)
+    today = now.date()
+    now_minutes = now.hour * 60 + now.minute
+    open_minutes = cfg.open_hour * 60 + cfg.open_minute
+    close_minutes = cfg.close_hour * 60 + cfg.close_minute
+    window_open = open_minutes <= now_minutes < close_minutes
+
+    result = await db.execute(
+        select(AttendanceSession).where(
+            AttendanceSession.session_date == today,
+            AttendanceSession.department == user.department,
+        )
+    )
+    sessions = result.scalars().all()
+
+    marked_ids = set()
+    if sessions:
+        recs = await db.execute(
+            select(AttendanceRecord.session_id).where(
+                AttendanceRecord.user_id == user.id,
+                AttendanceRecord.session_id.in_([s.id for s in sessions]),
+            )
+        )
+        marked_ids = {r[0] for r in recs.all()}
+
+    return {
+        "sessions": [
+            {
+                "id": s.id,
+                "title": s.title,
+                "department": s.department,
+                "subject": s.subject,
+                "is_open": s.is_open,
+                "already_marked": s.id in marked_ids,
+            }
+            for s in sessions
+        ],
+        "window_open": window_open,
+        "window": f"{cfg.open_hour:02d}:{cfg.open_minute:02d}–{cfg.close_hour:02d}:{cfg.close_minute:02d}",
+    }
+
+
 # ── Face Registration ─────────────────────────────────────
 
 @router.post("/register-face", response_model=RegisterFaceResponse)

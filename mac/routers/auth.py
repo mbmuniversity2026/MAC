@@ -412,7 +412,9 @@ async def list_registry(
     entries = result.scalars().all()
     return {
         "entries": [
-            {"id": e.id, "roll_number": e.roll_number, "name": e.name,
+            {"id": e.id, "roll_number": e.roll_number,
+             "registration_number": getattr(e, 'registration_number', None) or '',
+             "name": e.name,
              "department": e.department, "dob": e.dob.isoformat(), "batch_year": e.batch_year,
              "role": getattr(e, 'role', 'student')}
             for e in entries
@@ -446,7 +448,8 @@ async def add_registry_entry(
         raise HTTPException(status_code=409, detail={"code": "conflict", "message": "Roll number already in registry"})
 
     role = getattr(body, 'role', 'student') or 'student'
-    entry = StudentRegistry(roll_number=roll, name=name, department=dept, dob=dob, batch_year=batch, role=role)
+    reg_no = getattr(body, 'registration_number', None)
+    entry = StudentRegistry(roll_number=roll, registration_number=reg_no or None, name=name, department=dept, dob=dob, batch_year=batch, role=role)
     db.add(entry)
     await db.commit()
     return {"message": f"Registry entry for {roll} added as {role}"}
