@@ -39,8 +39,8 @@ ArchitecturesInstallIn64BitMode=x64compatible
 ; ── Branding ──
 SetupIconFile=mac-logo.ico
 UninstallDisplayIcon={app}\mac-logo.ico
-WizardImageFile=logo_256.bmp
-WizardSmallImageFile=logo_256.bmp
+WizardImageFile=wizard_large.bmp
+WizardSmallImageFile=wizard_small.bmp
 WizardImageStretch=no
 AppVerName=MAC v{#AppVersion} — MBM AI Cloud
 
@@ -67,6 +67,8 @@ Source: "mac-logo.ico"; DestDir: "{app}"; Flags: ignoreversion
 Source: "logo.png"; DestDir: "{app}"; Flags: ignoreversion
 Source: "logo_256.bmp"; DestDir: "{app}"; Flags: ignoreversion
 Source: "logo_256.png"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "wizard_large.bmp"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "wizard_small.bmp"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 
 ; ── HOST files ──
 Source: "docker-compose.yml"; DestDir: "{app}"; Flags: ignoreversion; Components: host
@@ -244,70 +246,33 @@ begin
 end;
 
 { ═══════════════════════════════════════════════════════════
-  ANIMATED MASCOT — ASCII character with wink/wave frames
-  ═══════════════════════════════════════════════════════════ }
-function GetMascotFrame(Frame: Integer): String;
-begin
-  case (Frame mod 4) of
-    0: begin
-      Result := '       ___________  ' + #13#10;
-      Result := Result + '      /           \ ' + #13#10;
-      Result := Result + '     |  O     O  | ' + #13#10;
-      Result := Result + '     |    ___    |  Hi! I''m MAC' + #13#10;
-      Result := Result + '     |   |   |   |  MBM AI Cloud' + #13#10;
-      Result := Result + '      \   ---   /  ' + #13#10;
-      Result := Result + '       \_______/   ' + #13#10;
-      Result := Result + '        || ||      ';
-    end;
-    1: begin
-      Result := '       ___________  ' + #13#10;
-      Result := Result + '      /           \ ' + #13#10;
-      Result := Result + '     |  -     O  | ' + #13#10;
-      Result := Result + '     |    ___    |  *wink*' + #13#10;
-      Result := Result + '     |   |   |   |  ' + #13#10;
-      Result := Result + '      \   ---   /  ' + #13#10;
-      Result := Result + '       \_______/   ' + #13#10;
-      Result := Result + '        || ||      ';
-    end;
-    2: begin
-      Result := '       ___________  ' + #13#10;
-      Result := Result + '      /           \ ' + #13#10;
-      Result := Result + '     |  O     O  | ' + #13#10;
-      Result := Result + '     |    ___    |  Installing...' + #13#10;
-      Result := Result + '     |   | ^ |   |  Let''s go!' + #13#10;
-      Result := Result + '      \   ---   /  ' + #13#10;
-      Result := Result + '       \_______/   ' + #13#10;
-      Result := Result + '        || ||      ';
-    end;
-    3: begin
-      Result := '       ___________  ' + #13#10;
-      Result := Result + '      /           \ ' + #13#10;
-      Result := Result + '     |  O     -  | ' + #13#10;
-      Result := Result + '     |    ___    |  Your AI Cloud' + #13#10;
-      Result := Result + '     |   |   |   |  awaits!' + #13#10;
-      Result := Result + '      \   ---   /  ' + #13#10;
-      Result := Result + '       \_______/   ' + #13#10;
-      Result := Result + '        || ||      ';
-    end;
-  end;
-end;
-
-{ ═══════════════════════════════════════════════════════════
   WIZARD PAGES — Hardware scan + Ready summary
   ═══════════════════════════════════════════════════════════ }
 procedure InitializeWizard();
 begin
-  { Static mascot on the welcome page }
+  { Static MAC mascot on welcome page (no TTimer — not supported in Pascal Script) }
   MascotLabel := TNewStaticText.Create(WizardForm);
   MascotLabel.Parent := WizardForm.WelcomePage;
   MascotLabel.Left := 185;
-  MascotLabel.Top := 260;
-  MascotLabel.Width := 300;
-  MascotLabel.Height := 140;
+  MascotLabel.Top := 250;
+  MascotLabel.Width := 320;
+  MascotLabel.Height := 160;
   MascotLabel.Font.Name := 'Consolas';
   MascotLabel.Font.Size := 9;
   MascotLabel.Font.Color := $003A70C2;
-  MascotLabel.Caption := GetMascotFrame(0);
+  MascotLabel.Caption :=
+    '            .---.           ' + #13#10 +
+    '           / o o \          ' + #13#10 +
+    '          |  ___  |         ' + #13#10 +
+    '          | |   | |         ' + #13#10 +
+    '           \ `-'' /          ' + #13#10 +
+    '            `---''           ' + #13#10 +
+    '           /|   |\          ' + #13#10 +
+    '          / |   | \         ' + #13#10 +
+    '' + #13#10 +
+    '   Welcome, I am MAC!      ' + #13#10 +
+    '   Your AI Cloud Assistant ' + #13#10 +
+    '   from MBM University     ';
 
   { Page 1: Hardware info — shown after component selection }
   HardwareInfoPage := CreateCustomPage(
@@ -392,7 +357,7 @@ begin
       Summary := Summary + '  1. Copy MAC platform files to:' + #13#10;
       Summary := Summary + '     ' + ExpandConstant('{app}') + #13#10;
       Summary := Summary + '' + #13#10;
-      if IsTaskSelected('firewall') then
+      if WizardIsTaskSelected('firewall') then
       begin
         Summary := Summary + '  2. Open firewall ports:' + #13#10;
         Summary := Summary + '     - Port 80   (HTTP)' + #13#10;
@@ -423,7 +388,7 @@ begin
       Summary := Summary + '  1. Copy worker agent files to:' + #13#10;
       Summary := Summary + '     ' + ExpandConstant('{app}') + #13#10;
       Summary := Summary + '' + #13#10;
-      if IsTaskSelected('firewall_worker') then
+      if WizardIsTaskSelected('firewall_worker') then
       begin
         Summary := Summary + '  2. Open firewall port 8001 (vLLM inference)' + #13#10;
         Summary := Summary + '' + #13#10;
@@ -474,7 +439,7 @@ begin
       end;
 
       { Install CA certificate to trusted store }
-      if IsTaskSelected('installcert') and FileExists(CaCrtPath) then
+      if WizardIsTaskSelected('installcert') and FileExists(CaCrtPath) then
       begin
         WizardForm.StatusLabel.Caption := 'Installing CA certificate...';
         Exec('certutil', '-user -addstore "Root" "' + CaCrtPath + '"',

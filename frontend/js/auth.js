@@ -223,23 +223,50 @@ var _SVG_LOCK = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" str
 var _SVG_CAL  = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>';
 var _SVG_DOOR = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>';
 var _SVG_CHECK= '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
-var _MAC_MASCOT_SM = '<svg class="mac-mascot" width="28" height="28" viewBox="0 0 32 32" fill="none">' +
-  '<g class="mascot-body">' +
-  '<ellipse cx="16" cy="16" rx="10" ry="11" fill="var(--accent)"/>' +
-  '<ellipse cx="16" cy="17" rx="8" ry="7" fill="var(--accent)" opacity=".9"/>' +
-  '<circle cx="12.5" cy="14" r="3" fill="#fff" class="mascot-eye mascot-eye-l"/>' +
-  '<circle cx="19.5" cy="14" r="3" fill="#fff" class="mascot-eye mascot-eye-r"/>' +
-  '<circle cx="12.5" cy="14.3" r="1.5" fill="#1a1a1a" class="mascot-pupil"/>' +
-  '<circle cx="19.5" cy="14.3" r="1.5" fill="#1a1a1a" class="mascot-pupil mascot-pupil-wink"/>' +
-  '<ellipse cx="16" cy="19" rx="2.5" ry="1.3" fill="#fff" opacity=".9"/>' +
-  '<ellipse cx="10" cy="17" rx="1.5" ry="1" fill="#ff9a76" opacity=".4"/>' +
-  '<ellipse cx="22" cy="17" rx="1.5" ry="1" fill="#ff9a76" opacity=".4"/>' +
-  '<circle cx="7" cy="10" r="1.5" fill="var(--accent)" opacity=".6"/>' +
-  '<circle cx="25" cy="10" r="1.5" fill="var(--accent)" opacity=".6"/>' +
-  '<rect x="13" y="25" width="2" height="3" rx="1" fill="var(--accent)"/>' +
-  '<rect x="17" y="25" width="2" height="3" rx="1" fill="var(--accent)"/>' +
+var _MAC_MASCOT_SM = '<svg class="mac-mascot" width="36" height="36" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+  '<defs>' +
+  '<radialGradient id="mg" cx="50%" cy="40%" r="55%"><stop offset="0%" stop-color="var(--accent)" stop-opacity=".15"/><stop offset="100%" stop-color="var(--accent)" stop-opacity="0"/></radialGradient>' +
+  '<filter id="ms"><feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="var(--accent)" flood-opacity=".25"/></filter>' +
+  '</defs>' +
+  '<g class="mascot-body" filter="url(#ms)">' +
+  '<ellipse class="mascot-glow" cx="32" cy="56" rx="14" ry="3" fill="var(--accent)" opacity=".12"/>' +
+  '<path d="M32 8c-12 0-20 8.5-20 19 0 6 2.5 11 6.5 14.5 1.5 1.3 2.5 3.2 2.5 5.5v1c0 2.2 1.8 4 4 4h14c2.2 0 4-1.8 4-4v-1c0-2.3 1-4.2 2.5-5.5C49.5 38 52 33 52 27c0-10.5-8-19-20-19z" fill="var(--accent)"/>' +
+  '<path d="M32 8c-12 0-20 8.5-20 19 0 6 2.5 11 6.5 14.5 1.5 1.3 2.5 3.2 2.5 5.5v1c0 2.2 1.8 4 4 4h14c2.2 0 4-1.8 4-4v-1c0-2.3 1-4.2 2.5-5.5C49.5 38 52 33 52 27c0-10.5-8-19-20-19z" fill="url(#mg)"/>' +
+  '<rect x="25" y="50" width="14" height="3" rx="1.5" fill="var(--accent)" opacity=".6"/>' +
+  '<rect x="27" y="54" width="10" height="2" rx="1" fill="var(--accent)" opacity=".4"/>' +
+  '<circle cx="24" cy="27" r="5.5" fill="#fff" class="mascot-eye mascot-eye-l"/>' +
+  '<circle cx="40" cy="27" r="5.5" fill="#fff" class="mascot-eye mascot-eye-r"/>' +
+  '<circle cx="24" cy="27.8" r="3" fill="#1a1a2e" class="mascot-pupil mascot-pupil-l"/>' +
+  '<circle cx="40" cy="27.8" r="3" fill="#1a1a2e" class="mascot-pupil mascot-pupil-r mascot-pupil-wink"/>' +
+  '<circle cx="23" cy="26" r="1.2" fill="#fff" opacity=".9" class="mascot-reflect"/>' +
+  '<circle cx="39" cy="26" r="1.2" fill="#fff" opacity=".9" class="mascot-reflect"/>' +
+  '<ellipse cx="32" cy="35" rx="3" ry="1.8" fill="#fff" opacity=".85"/>' +
+  '<ellipse cx="16" cy="30" rx="3" ry="2" fill="#ff9a76" opacity=".2" class="mascot-blush"/>' +
+  '<ellipse cx="48" cy="30" rx="3" ry="2" fill="#ff9a76" opacity=".2" class="mascot-blush"/>' +
+  '<circle cx="15" cy="18" r="2" fill="var(--accent)" opacity=".3" class="mascot-sparkle mascot-sparkle-1"/>' +
+  '<circle cx="49" cy="15" r="1.5" fill="var(--accent)" opacity=".25" class="mascot-sparkle mascot-sparkle-2"/>' +
+  '<circle cx="52" cy="22" r="1" fill="var(--accent)" opacity=".2" class="mascot-sparkle mascot-sparkle-3"/>' +
+  '<path d="M26 10c1.5-3 3.5-4.5 6-4.5s4.5 1.5 6 4.5" stroke="var(--accent)" stroke-width="1.5" stroke-linecap="round" opacity=".3" class="mascot-antenna"/>' +
+  '<circle cx="32" cy="5" r="2" fill="var(--accent)" opacity=".5" class="mascot-antenna-tip"/>' +
   '</g></svg>';
 var _MAC_MASCOT = _MAC_MASCOT_SM;
+
+function _macMascotClick(e) {
+  e.stopPropagation();
+  var existing = document.querySelector('.mascot-speech');
+  if (existing) { existing.remove(); return; }
+  var bubble = document.createElement('div');
+  bubble.className = 'mascot-speech';
+  bubble.innerHTML = '<span class="mascot-speech-text">Welcome, I am MAC</span><span class="mascot-speech-tail"></span>';
+  var btn = e.currentTarget;
+  btn.style.position = 'relative';
+  btn.appendChild(bubble);
+  requestAnimationFrame(function() { bubble.classList.add('show'); });
+  setTimeout(function() {
+    bubble.classList.remove('show');
+    setTimeout(function() { if (bubble.parentNode) bubble.remove(); }, 400);
+  }, 2800);
+}
 var _SVG_GLOBE= '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>';
 var _SVG_CHEV = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>';
 var _SVG_BACK = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>';
@@ -376,7 +403,10 @@ function authPage() {
       '<button type="submit" class="sign-btn" id="auth-submit">' + _SVG_DOOR + '<span>' + esc(i18n.t('signIn')) + '</span></button>' +
     '</form>' +
     '<div class="auth-divider"><span>' + esc(i18n.t('or')) + '</span></div>' +
-    '<button class="alt-btn" id="switch-to-verify">' + _MAC_MASCOT + '<span>' + esc(i18n.t('firstTime')) + '</span></button>' +
+    '<div class="mascot-verify-wrap" id="mascot-wrap">' +
+      '<div class="mascot-hero" id="mascot-hero">' + _MAC_MASCOT.replace('width="36"','width="52"').replace('height="36"','height="52"') + '</div>' +
+    '</div>' +
+    '<button class="alt-btn" id="switch-to-verify"><span>' + esc(i18n.t('firstTime')) + '</span><svg class="alt-btn-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></button>' +
     footer +
   '</div></div>';
 }
@@ -404,6 +434,10 @@ function bindAuth() {
   /* Switch to verify */
   var switchToVerify = document.getElementById('switch-to-verify');
   if (switchToVerify) switchToVerify.onclick = function(e) { e.preventDefault(); authMode = 'verify'; render(); };
+
+  /* Mascot click — speech bubble */
+  var mascotHero = document.getElementById('mascot-hero');
+  if (mascotHero) mascotHero.onclick = _macMascotClick;
 
   /* ── Form submit ── */
   form.onsubmit = async function(e) {

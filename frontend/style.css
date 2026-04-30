@@ -273,15 +273,40 @@ input:focus,textarea:focus,select:focus{border-color:var(--input-focus);box-shad
 /* Alt / switch button */
 .alt-btn{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;padding:11px 16px;background:none;border:1px solid var(--border);border-radius:11px;cursor:pointer;font-size:13px;font-weight:500;color:var(--fg-secondary);font-family:inherit;transition:border-color .2s,color .2s,background .2s}
 .alt-btn:hover{border-color:var(--accent);color:var(--accent);background:rgba(194,112,58,.04)}
-/* ── MAC Mascot character animations ── */
-.mac-mascot{flex-shrink:0;overflow:visible}
-.mac-mascot .mascot-body{animation:mascotBreathe 3s ease-in-out infinite;transform-origin:center 18px}
-.mac-mascot .mascot-pupil-wink{animation:mascotWink 4s ease-in-out infinite}
-@keyframes mascotBreathe{0%,100%{transform:scaleY(1) translateY(0)}50%{transform:scaleY(1.03) translateY(-0.5px)}}
-@keyframes mascotWink{0%,40%,55%,100%{ry:1.5;opacity:1}44%,51%{ry:.2;opacity:.5}}
-.alt-btn:hover .mac-mascot .mascot-body{animation:mascotBounce .5s ease}
-@keyframes mascotBounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
-.alt-btn:hover .mac-mascot .mascot-pupil{fill:var(--accent)}
+/* ── MAC Mascot character — modern cloud AI assistant ── */
+.mac-mascot{flex-shrink:0;overflow:visible;cursor:pointer;transition:transform .2s cubic-bezier(.34,1.56,.64,1)}
+.mac-mascot:hover{transform:scale(1.1)}
+.mac-mascot .mascot-body{animation:mascotFloat 3.5s ease-in-out infinite;transform-origin:center 32px}
+.mac-mascot .mascot-pupil-wink{animation:mascotBlink 4.5s ease-in-out infinite}
+.mac-mascot .mascot-reflect{animation:mascotReflect 4.5s ease-in-out infinite}
+.mac-mascot .mascot-sparkle-1{animation:mascotSparkle1 3s ease-in-out infinite}
+.mac-mascot .mascot-sparkle-2{animation:mascotSparkle2 4s ease-in-out infinite .5s}
+.mac-mascot .mascot-sparkle-3{animation:mascotSparkle3 3.5s ease-in-out infinite 1s}
+.mac-mascot .mascot-blush{animation:mascotBlush 4s ease-in-out infinite}
+.mac-mascot .mascot-antenna-tip{animation:mascotAntennaPulse 2s ease-in-out infinite}
+.mac-mascot .mascot-glow{animation:mascotShadow 3.5s ease-in-out infinite}
+@keyframes mascotFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+@keyframes mascotBlink{0%,38%,52%,100%{ry:3;opacity:1}42%,48%{ry:.3;opacity:.6}}
+@keyframes mascotReflect{0%,38%,52%,100%{opacity:.9}42%,48%{opacity:0}}
+@keyframes mascotSparkle1{0%,100%{opacity:.3;r:2}50%{opacity:.6;r:2.5}}
+@keyframes mascotSparkle2{0%,100%{opacity:.25;r:1.5}50%{opacity:.5;r:2}}
+@keyframes mascotSparkle3{0%,100%{opacity:.2;r:1}50%{opacity:.45;r:1.5}}
+@keyframes mascotBlush{0%,100%{opacity:.2}50%{opacity:.35}}
+@keyframes mascotAntennaPulse{0%,100%{opacity:.5;r:2}50%{opacity:.8;r:2.8}}
+@keyframes mascotShadow{0%,100%{rx:14;opacity:.12}50%{rx:12;opacity:.08}}
+/* Mascot hero placement */
+.mascot-verify-wrap{display:flex;justify-content:center;margin:-4px 0 6px}
+.mascot-hero{display:inline-flex;align-items:center;justify-content:center;cursor:pointer;position:relative;border-radius:50%;padding:6px;transition:transform .25s cubic-bezier(.34,1.56,.64,1)}
+.mascot-hero:hover{transform:scale(1.15)}
+.mascot-hero:active{transform:scale(.95)}
+/* Speech bubble */
+.mascot-speech{position:absolute;bottom:calc(100% + 10px);left:50%;transform:translateX(-50%) translateY(8px);opacity:0;pointer-events:none;transition:opacity .35s ease,transform .35s cubic-bezier(.34,1.56,.64,1);z-index:100;white-space:nowrap}
+.mascot-speech.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.mascot-speech-text{display:inline-block;padding:8px 16px;background:var(--accent);color:#fff;border-radius:18px;font-size:13px;font-weight:600;letter-spacing:.01em;box-shadow:0 4px 20px rgba(0,0,0,.15)}
+.mascot-speech-tail{position:absolute;bottom:-5px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:6px solid var(--accent)}
+/* Alt button arrow */
+.alt-btn-arrow{flex-shrink:0;transition:transform .2s}
+.alt-btn:hover .alt-btn-arrow{transform:translateX(3px)}
 /* Auth divider (kept for legacy use) */
 .auth-divider{display:flex;align-items:center;gap:10px;margin:16px 0;color:var(--muted);font-size:.72rem}
 .auth-divider::before,.auth-divider::after{content:'';flex:1;height:1px;background:var(--border)}
