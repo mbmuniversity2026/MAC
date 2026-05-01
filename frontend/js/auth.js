@@ -407,8 +407,29 @@ function authPage() {
       '<div class="mascot-hero" id="mascot-hero">' + _MAC_MASCOT.replace('width="36"','width="52"').replace('height="36"','height="52"') + '</div>' +
     '</div>' +
     '<button class="alt-btn" id="switch-to-verify"><span>' + esc(i18n.t('firstTime')) + '</span><svg class="alt-btn-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></button>' +
+    _devCredsBanner() +
     footer +
   '</div></div>';
+}
+
+/* ── Dev credentials hint (shown only on LAN/localhost) ─── */
+function _devCredsBanner() {
+  var h = location.hostname;
+  var isLocal = h === 'localhost' || h === '127.0.0.1' || /^192\.168\.|^10\.|^172\.(1[6-9]|2\d|3[01])\./.test(h);
+  if (!isLocal) return '';
+  return '<details class="dev-creds" style="margin-top:12px;border:1px dashed var(--border);border-radius:10px;padding:8px 12px;font-size:.75rem;color:var(--muted);cursor:pointer;">' +
+    '<summary style="font-weight:600;color:var(--accent);user-select:none;list-style:none;display:flex;align-items:center;gap:6px;">' +
+      '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>' +
+      'Dev test accounts' +
+    '</summary>' +
+    '<table style="margin-top:8px;width:100%;border-collapse:collapse;font-family:monospace;font-size:.72rem;">' +
+      '<tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:2px 4px;color:var(--text-secondary)">Role</th><th style="text-align:left;padding:2px 4px;color:var(--text-secondary)">Roll / ID</th><th style="text-align:left;padding:2px 4px;color:var(--text-secondary)">Password</th></tr>' +
+      '<tr><td style="padding:3px 4px">Admin</td><td style="padding:3px 4px;color:var(--accent)">abhisek.cse@mbm.ac.in</td><td style="padding:3px 4px">Admin@1234</td></tr>' +
+      '<tr><td style="padding:3px 4px">Faculty</td><td style="padding:3px 4px;color:var(--accent)">raj.cse@mbm.ac.in</td><td style="padding:3px 4px">Faculty@1234</td></tr>' +
+      '<tr><td style="padding:3px 4px">Student</td><td style="padding:3px 4px;color:var(--accent)">21CS045</td><td style="padding:3px 4px">Student@1234</td></tr>' +
+    '</table>' +
+    '<p style="margin:6px 0 0;font-size:.68rem;opacity:.7;">DOB verify: Admin=01011990 · Faculty=15061985 · Student=15082003</p>' +
+  '</details>';
 }
 
 /* ── Bind auth page events ──────────────────────────────── */
