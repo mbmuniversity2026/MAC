@@ -41,6 +41,13 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+    volumes:
+      # Persistent uploads stored on host PC — organized by type
+      - ./data/uploads/copy_check:/app/uploads/copy_check
+      - ./data/uploads/rag:/app/uploads/rag
+      - ./data/uploads/attendance:/app/uploads/attendance
+      - ./data/uploads/fileshare:/app/uploads/fileshare
+      - ./data/uploads/syllabus:/app/uploads/syllabus
     logging:
       driver: "json-file"
       options:

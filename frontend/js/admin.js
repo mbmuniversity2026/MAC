@@ -56,6 +56,10 @@ async function renderAdmin() {
   document.querySelectorAll('#admin-tabs .admin-tab').forEach(t => {
     t.onclick = () => { adminTab = t.dataset.tab; localStorage.setItem('mac_admin_tab', adminTab); renderAdmin(); };
   });
+  requestAnimationFrame(() => {
+    const activeTab = document.querySelector('#admin-tabs .admin-tab.active');
+    if (activeTab) activeTab.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'instant' });
+  });
   if (adminTab === 'overview') await renderAdminOverview();
   else if (adminTab === 'users') await renderAdminUsers();
   else if (adminTab === 'keys') await renderAdminKeys();

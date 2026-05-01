@@ -324,6 +324,30 @@ function renderHeatmap(containerId, data) {
       <span style="font-size:.7rem;color:var(--muted)">More</span>
     </div>
   `;
+
+  // Mobile-friendly click tooltip for heatmap cells
+  let _hmTooltip = null;
+  container.querySelectorAll('.hm-cell[title]').forEach(cell => {
+    cell.addEventListener('click', (e) => {
+      if (_hmTooltip) { _hmTooltip.remove(); _hmTooltip = null; }
+      const tip = document.createElement('div');
+      tip.className = 'hm-tooltip';
+      tip.textContent = cell.title;
+      tip.style.cssText = 'position:fixed;background:rgba(0,0,0,.85);color:#fff;padding:6px 12px;border-radius:8px;font-size:.75rem;pointer-events:none;z-index:9990;white-space:nowrap;';
+      document.body.appendChild(tip);
+      _hmTooltip = tip;
+      const rect = cell.getBoundingClientRect();
+      const tipW = tip.offsetWidth;
+      let left = rect.left + rect.width / 2 - tipW / 2;
+      left = Math.max(8, Math.min(left, window.innerWidth - tipW - 8));
+      tip.style.left = left + 'px';
+      tip.style.top = (rect.top - tip.offsetHeight - 8 + window.scrollY) + 'px';
+      setTimeout(() => { if (_hmTooltip === tip) { tip.remove(); _hmTooltip = null; } }, 2500);
+    });
+  });
+  document.addEventListener('click', (e) => {
+    if (_hmTooltip && !e.target.closest('.hm-cell')) { _hmTooltip.remove(); _hmTooltip = null; }
+  }, { once: false, capture: false });
 }
 
 /* 

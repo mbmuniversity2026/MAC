@@ -230,6 +230,8 @@ async function init() {
       .then(reg => console.log('[MAC] SW registered, scope:', reg.scope))
       .catch(err => console.warn('[MAC] SW registration failed:', err));
   }
+  // Show intro splash every fresh session regardless of login state
+  runIntroIfNeeded();
   // Worker join page — no auth required
   if (location.hash === '#join' || location.pathname === '/join') {
     state.page = 'join';
@@ -324,27 +326,40 @@ function logout() {
 
 function showAbout() {
   const el = document.createElement('div');
-  el.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.52);display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);';
+  el.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);';
   el.innerHTML = `
-    <div style="background:var(--card);border:1px solid var(--border);border-radius:20px;padding:40px 36px 32px;max-width:440px;width:90%;text-align:center;position:relative;box-shadow:0 12px 48px rgba(0,0,0,.22);">
-      <button onclick="this.closest('[style*=fixed]').remove()" style="position:absolute;top:14px;right:14px;background:none;border:none;font-size:1.3rem;cursor:pointer;color:var(--muted);line-height:1;padding:4px 8px;border-radius:6px;transition:background .15s;" onmouseover="this.style.background='var(--hover)'" onmouseout="this.style.background='none'">&times;</button>
-      <div style="font-size:3.2rem;margin-bottom:6px;"><span class="glitch" data-text="MAC">MAC</span></div>
-      <div style="font-weight:800;font-size:1.15rem;margin-bottom:3px;letter-spacing:.01em;">MBM AI Cloud</div>
-      <div style="color:var(--muted);font-size:.8rem;margin-bottom:18px;letter-spacing:.04em;text-transform:uppercase;">Self-Hosted AI Inference Platform</div>
-      <div style="font-size:.85rem;color:var(--fg-secondary);line-height:1.75;margin-bottom:20px;padding:14px 16px;background:var(--bg-secondary,var(--bg));border-radius:10px;border:1px solid var(--border);">
-        Built for <strong>MBM University, Jodhpur</strong> &mdash; by MBM, for MBM.<br>
-        Runs fully offline on the college LAN.<br>
-        Powered by open-source models via vLLM &amp; Ollama.<br>
-        <span style="color:var(--muted);font-size:.78rem;">This is <em>not</em> an Apple Inc. product.</span>
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:24px;padding:0;max-width:460px;width:92%;position:relative;box-shadow:0 24px 64px rgba(0,0,0,.28);overflow:hidden;">
+      <button onclick="this.closest('[style*=fixed]').remove()" style="position:absolute;top:14px;right:14px;background:rgba(0,0,0,.08);border:none;font-size:1.1rem;cursor:pointer;color:var(--fg);line-height:1;padding:5px 9px;border-radius:50%;transition:background .15s;z-index:2" onmouseover="this.style.background='rgba(0,0,0,.18)'" onmouseout="this.style.background='rgba(0,0,0,.08)'">&times;</button>
+
+      <!-- Hero: macintosh-style greeting -->
+      <div style="background:linear-gradient(135deg,var(--accent-light) 0%,var(--bg-secondary) 100%);padding:36px 32px 24px;text-align:center;border-bottom:1px solid var(--border);">
+        <div style="font-family:'Brush Script MT','Segoe Script','Comic Sans MS',cursive;font-size:clamp(3rem,10vw,5rem);color:var(--accent);line-height:1;margin-bottom:8px;text-shadow:0 2px 16px rgba(0,0,0,.10);">hello.</div>
+        <div style="font-family:'Brush Script MT','Segoe Script','Comic Sans MS',cursive;font-size:clamp(1rem,4vw,1.4rem);color:var(--fg-secondary);margin-bottom:16px;font-style:italic;">from MAC &mdash; MBM AI Cloud</div>
+        <div style="display:inline-flex;align-items:center;gap:8px;background:var(--accent);color:#fff;padding:6px 18px;border-radius:999px;font-size:.78rem;font-weight:700;letter-spacing:.06em;">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          MAC v0.0 &nbsp;&middot;&nbsp; MBM University
+        </div>
       </div>
-      <div style="font-size:.75rem;color:var(--muted);line-height:1.8;margin-bottom:16px;">
-        &copy; 2026 MBM University, Jodhpur &mdash; MBM AI Cloud<br>
-        <span style="font-size:.7rem;">Licensed under the <strong style="color:var(--accent)">MBM Open License</strong> &mdash; free to use within MBM campus network.</span>
-      </div>
-      <div style="display:flex;gap:10px;justify-content:center;font-size:.7rem;color:var(--muted);flex-wrap:wrap;">
-        <span style="background:var(--hover);padding:3px 10px;border-radius:20px;">v1.0.0</span>
-        <span style="background:var(--hover);padding:3px 10px;border-radius:20px;">FastAPI + Vanilla JS</span>
-        <span style="background:var(--hover);padding:3px 10px;border-radius:20px;">MBM License</span>
+
+      <!-- Body -->
+      <div style="padding:24px 28px 28px;text-align:center;">
+        <p style="font-size:.88rem;color:var(--fg-secondary);line-height:1.9;margin-bottom:18px;">
+          A self-hosted AI inference platform built<br>
+          <strong style="color:var(--fg)">for MBM University, Jodhpur</strong> &mdash; by MBM, for MBM.<br>
+          Runs <em>fully offline</em> on the college LAN.<br>
+          Powered by open-source models via vLLM &amp; Ollama.
+        </p>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-bottom:18px;">
+          <span style="background:var(--accent-light);color:var(--accent);padding:4px 12px;border-radius:999px;font-size:.72rem;font-weight:600;">FastAPI + Vanilla JS</span>
+          <span style="background:var(--accent-light);color:var(--accent);padding:4px 12px;border-radius:999px;font-size:.72rem;font-weight:600;">PostgreSQL + Redis</span>
+          <span style="background:var(--accent-light);color:var(--accent);padding:4px 12px;border-radius:999px;font-size:.72rem;font-weight:600;">vLLM Inference</span>
+          <span style="background:var(--accent-light);color:var(--accent);padding:4px 12px;border-radius:999px;font-size:.72rem;font-weight:600;">Offline PWA</span>
+        </div>
+        <div style="font-size:.72rem;color:var(--muted);line-height:1.8;border-top:1px solid var(--border);padding-top:14px;">
+          &copy; 2026 MBM University, Jodhpur &mdash; MBM AI Cloud<br>
+          Licensed under the <strong style="color:var(--accent)">MBM Open License</strong> &mdash; free within MBM campus network.<br>
+          <span style="opacity:.65">This is <em>not</em> an Apple Inc. product.</span>
+        </div>
       </div>
     </div>`;
   el.onclick = (e) => { if (e.target === el) el.remove(); };
@@ -358,12 +373,13 @@ async function installPWA() {
   if (result.outcome === 'accepted') deferredInstallPrompt = null;
 }
 
-/* 
-   INTRO ANIMATION "" MBM &rarr; MAC first-visit morph
+/*
+   INTRO ANIMATION "" MBM &rarr; MAC morph — runs every fresh session
     */
 function runIntroIfNeeded() {
-  if (localStorage.getItem('mac_intro_seen')) return;
-  localStorage.setItem('mac_intro_seen', '1');
+  // Use sessionStorage so animation shows every time app starts fresh (new session)
+  if (sessionStorage.getItem('mac_intro_shown')) return;
+  sessionStorage.setItem('mac_intro_shown', '1');
 
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;inset:0;z-index:9998;background:var(--bg);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;pointer-events:none;';

@@ -230,20 +230,100 @@ async def _run_evaluation_background(session_id: str, sheet_ids: list[str], acto
             sess.status = "done"
         await db.commit()
 
-        # Notify creator
+        # Notify creator (faculty/admin who triggered)
         from mac.services import notification_service as ns
+        from mac.models.user import User as UserModel
+        from sqlalchemy import select as _select
+
+        summary_body = (
+            f"'{sess.subject}' — {sess.class_name or ''} {sess.department} | "
+            f"{done}/{sess.sheet_count} evaluated."
+        )
         await ns.create_notification(
             db, user_id=actor_id,
-            title="Copy Check Evaluation Complete",
-            body=f"All sheets for '{sess.subject}' have been evaluated. {done}/{len(sheet_ids)} successful.",
+            title="Copy Check Complete",
+            body=summary_body,
             category="copy_check",
+            link="#copycheck",
         )
+
+        # Notify all admins (so they see results without keeping app open)
+        admins = (await db.execute(
+            _select(UserModel).where(UserModel.role == "admin", UserModel.id != actor_id)
+        )).scalars().all()
+        for admin in admins:
+            await ns.create_notification(
+                db, user_id=admin.id,
+                title="Copy Check Complete",
+                body=summary_body,
+                category="copy_check",
+                link="#copycheck",
+            )
+
+        # Notify each student with their individual result
+        evaluated_sheets = await svc.get_sheets(db, session_id)
+        for sheet in evaluated_sheets:
+            if sheet.status != "done" or sheet.ai_marks is None:
+                continue
+            pct = round((sheet.ai_marks / sess.total_marks) * 100) if sess.total_marks else 0
+            # Find student user account by roll number
+            student_user = (await db.execute(
+                _select(UserModel).where(UserModel.roll_number == sheet.student_roll)
+            )).scalar_one_or_none()
+            if student_user:
+                feedback_snippet = (sheet.ai_feedback or "")[:200]
+                await ns.create_notification(
+                    db, user_id=student_user.id,
+                    title=f"Your marks: {sheet.ai_marks}/{sess.total_marks} ({pct}%)",
+                    body=f"{sess.subject} — {feedback_snippet}",
+                    category="copy_check",
+                    link="#copycheck",
+                )
+
+        await db.commit()
         await ns.log_audit(
             db, actor_id=actor_id, actor_role="system",
             action="copy_check.evaluate.complete",
             resource_type="copy_check", resource_id=session_id,
             details=f"Evaluated {done}/{len(sheet_ids)} sheets",
         )
+
+
+# ── Student: view own results ────────────────────────────
+
+@router.get("/my-results")
+async def get_my_results(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Students view evaluated sheets for their own roll number."""
+    if not user.roll_number:
+        return {"results": []}
+    from sqlalchemy import select as _select
+    from mac.models.copy_check import CopyCheckSheet, CopyCheckSession
+    rows = (await db.execute(
+        _select(CopyCheckSheet, CopyCheckSession)
+        .join(CopyCheckSession, CopyCheckSheet.session_id == CopyCheckSession.id)
+        .where(CopyCheckSheet.student_roll == user.roll_number)
+        .where(CopyCheckSheet.status == "done")
+        .order_by(CopyCheckSession.created_at.desc())
+    )).all()
+    return {
+        "results": [
+            {
+                "session_id": sess.id,
+                "subject": sess.subject,
+                "class_name": sess.class_name,
+                "department": sess.department,
+                "total_marks": sess.total_marks,
+                "ai_marks": sheet.ai_marks,
+                "ai_feedback": sheet.ai_feedback,
+                "pct": round((sheet.ai_marks / sess.total_marks) * 100) if sess.total_marks and sheet.ai_marks is not None else 0,
+                "evaluated_at": sheet.evaluated_at.isoformat() if sheet.evaluated_at else None,
+            }
+            for sheet, sess in rows
+        ]
+    }
 
 
 # ── Plagiarism Check ─────────────────────────────────────

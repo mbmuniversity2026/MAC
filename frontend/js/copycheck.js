@@ -3,16 +3,57 @@ async function renderCopyCheck() {
   el.className = 'page';
   const u = state.user || {};
   if (u.role === 'student') {
-    el.innerHTML = `<div class="empty-state" style="padding:60px 20px;text-align:center">
-      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--muted-text)" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-      <p style="margin-top:12px;color:var(--muted-text)">Copy Check is for faculty and administrators only.</p>
-    </div>`;
+    await renderStudentResults(el);
     return;
   }
   if (ccView === 'detail' && ccSessionId) {
     await renderCopyCheckDetail(el);
   } else {
     await renderCopyCheckList(el);
+  }
+}
+
+async function renderStudentResults(el) {
+  el.innerHTML = '<div class="loading-state"><div class="spinner"></div><span>Loading your results…</span></div>';
+  try {
+    const data = await apiJson('/copy-check/my-results');
+    const results = data.results || [];
+    if (results.length === 0) {
+      el.innerHTML = `<div class="empty-state" style="padding:60px 20px;text-align:center">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 15l2 2 4-4"/></svg>
+        <p style="margin-top:14px;color:var(--muted);font-size:.95rem">No evaluated results yet.</p>
+        <p style="color:var(--muted);font-size:.82rem;margin-top:6px">You will receive a notification when your answer sheets are checked.</p>
+      </div>`;
+      return;
+    }
+    el.innerHTML = `
+      <div class="admin-header"><div><h2>My Results</h2><p class="muted" style="margin:0">Your evaluated answer sheets</p></div></div>
+      <div class="cc-sessions-list">
+        ${results.map(r => {
+          const pctColor = r.pct >= 75 ? '#22c55e' : r.pct >= 50 ? 'var(--accent)' : '#ef4444';
+          const grade = r.pct >= 90 ? 'A+' : r.pct >= 75 ? 'A' : r.pct >= 60 ? 'B' : r.pct >= 50 ? 'C' : r.pct >= 40 ? 'D' : 'F';
+          return `<div class="cc-session-card" style="cursor:default">
+            <div class="cc-session-info">
+              <div class="cc-session-subject">${esc(r.subject)}</div>
+              <div class="cc-session-meta">
+                <span>${esc(r.class_name || '')}</span>
+                <span class="dot">&middot;</span>
+                <span>${esc(r.department)}</span>
+                <span class="dot">&middot;</span>
+                <span>${r.evaluated_at ? timeAgo(r.evaluated_at) : ''}</span>
+              </div>
+              ${r.ai_feedback ? `<div style="margin-top:10px;font-size:.82rem;color:var(--fg-secondary);line-height:1.7;background:var(--bg-secondary);padding:10px 14px;border-radius:8px;border:1px solid var(--border)">${esc(r.ai_feedback)}</div>` : ''}
+            </div>
+            <div class="cc-session-right" style="flex-direction:column;align-items:flex-end;gap:4px">
+              <div style="font-size:1.6rem;font-weight:900;color:${pctColor};font-family:'Courier New',monospace">${r.ai_marks}/${r.total_marks}</div>
+              <div style="font-size:.85rem;color:${pctColor};font-weight:700">${r.pct}% &nbsp; Grade ${grade}</div>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+    `;
+  } catch(ex) {
+    el.innerHTML = `<div class="error-state"><p>Error: ${esc(ex.message)}</p></div>`;
   }
 }
 
@@ -210,6 +251,10 @@ async function loadCCDetail() {
                 ${sheet ? 'Re-upload' : 'Upload'}
                 <input type="file" class="cc-sheet-input" data-roll="${esc(st.roll_number)}" accept="image/*,.pdf" style="display:none">
               </label>
+              <button class="btn btn-sm btn-outline" onclick="openCCScan('${ccSessionId}','${esc(st.roll_number)}')" title="Scan pages with camera">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="12" cy="12" r="3"/></svg>
+                Scan
+              </button>
             </div>`;
           }).join('')}
         </div>
@@ -401,6 +446,221 @@ async function loadCCDetail() {
   }
 }
 
-/* 
+/*
+   SCAN MODE "" Adobe Scan-like continuous capture → PDF → upload
+    */
+
+let _ccScanRoll = null;
+let _ccScanPages = []; // array of base64 JPEG strings
+let _ccScanStream = null;
+
+function showCCScanModal(sessionId, rollNumber) {
+  _ccScanRoll = rollNumber;
+  _ccScanPages = [];
+
+  const modal = document.createElement('div');
+  modal.id = 'cc-scan-modal';
+  modal.style.cssText = 'position:fixed;inset:0;z-index:9999;background:#000;display:flex;flex-direction:column;';
+  modal.innerHTML = `
+    <div style="position:absolute;top:0;left:0;right:0;z-index:10;display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:linear-gradient(to bottom,rgba(0,0,0,.75) 0%,transparent 100%);">
+      <button id="cc-scan-close" style="background:rgba(255,255,255,.15);border:none;color:#fff;padding:8px 14px;border-radius:8px;font-size:.85rem;cursor:pointer;">✕ Cancel</button>
+      <div style="color:#fff;font-weight:600;font-size:.9rem;">Scan Answer Sheet</div>
+      <div id="cc-scan-count" style="background:var(--accent);color:#fff;padding:5px 12px;border-radius:999px;font-size:.8rem;font-weight:700;">0 pages</div>
+    </div>
+    <video id="cc-scan-video" autoplay playsinline muted style="flex:1;object-fit:cover;width:100%;height:100%;"></video>
+    <!-- Scan guide overlay -->
+    <div style="position:absolute;inset:0;pointer-events:none;display:flex;align-items:center;justify-content:center;">
+      <div id="cc-scan-guide" style="width:min(85vw,380px);aspect-ratio:210/297;border:2px solid rgba(255,255,255,.5);border-radius:6px;box-shadow:0 0 0 9999px rgba(0,0,0,.35);"></div>
+    </div>
+    <!-- Bottom controls -->
+    <div style="position:absolute;bottom:0;left:0;right:0;padding:20px 24px 36px;background:linear-gradient(to top,rgba(0,0,0,.8) 0%,transparent 100%);display:flex;align-items:center;justify-content:space-between;gap:16px;">
+      <div id="cc-scan-thumbs" style="display:flex;gap:6px;overflow-x:auto;flex:1;"></div>
+      <button id="cc-scan-capture" style="width:68px;height:68px;border-radius:50%;background:#fff;border:4px solid var(--accent);cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#C2703A" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4" fill="#C2703A"/></svg>
+      </button>
+      <button id="cc-scan-done" style="background:var(--accent);color:#fff;border:none;padding:12px 22px;border-radius:12px;font-size:.9rem;font-weight:700;cursor:pointer;flex-shrink:0;opacity:.5;pointer-events:none;">Done</button>
+    </div>
+    <canvas id="cc-scan-canvas" style="display:none"></canvas>
+  `;
+  document.body.appendChild(modal);
+
+  const video = document.getElementById('cc-scan-video');
+  const captureBtn = document.getElementById('cc-scan-capture');
+  const doneBtn = document.getElementById('cc-scan-done');
+  const countEl = document.getElementById('cc-scan-count');
+  const thumbsEl = document.getElementById('cc-scan-thumbs');
+  const canvas = document.getElementById('cc-scan-canvas');
+  const closeBtn = document.getElementById('cc-scan-close');
+
+  // Start camera
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } } })
+    .then(stream => {
+      _ccScanStream = stream;
+      video.srcObject = stream;
+    })
+    .catch(() => {
+      showToast('Camera not available. Use file upload instead.', 'error');
+      _closeCCScan();
+    });
+
+  function _addThumb(dataUrl) {
+    const img = document.createElement('img');
+    img.src = dataUrl;
+    img.style.cssText = 'width:40px;height:56px;object-fit:cover;border-radius:4px;border:2px solid var(--accent);flex-shrink:0;';
+    thumbsEl.appendChild(img);
+    thumbsEl.scrollLeft = thumbsEl.scrollWidth;
+  }
+
+  captureBtn.onclick = () => {
+    // Flash effect
+    const flash = document.createElement('div');
+    flash.style.cssText = 'position:absolute;inset:0;background:#fff;opacity:.7;pointer-events:none;z-index:20;transition:opacity .3s';
+    modal.appendChild(flash);
+    setTimeout(() => { flash.style.opacity = '0'; setTimeout(() => flash.remove(), 320); }, 50);
+
+    // Capture frame from video
+    canvas.width = video.videoWidth || 1280;
+    canvas.height = video.videoHeight || 720;
+    canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
+    _ccScanPages.push(dataUrl);
+    _addThumb(dataUrl);
+    countEl.textContent = _ccScanPages.length + ' page' + (_ccScanPages.length !== 1 ? 's' : '');
+    doneBtn.style.opacity = '1';
+    doneBtn.style.pointerEvents = 'auto';
+  };
+
+  doneBtn.onclick = async () => {
+    if (_ccScanPages.length === 0) return;
+    doneBtn.disabled = true;
+    doneBtn.textContent = 'Processing…';
+    try {
+      const pdf = await _buildScanPdf(_ccScanPages);
+      _closeCCScan();
+      // Upload PDF to session
+      const fd = new FormData();
+      fd.append('student_roll', _ccScanRoll || 'scan-' + Date.now());
+      fd.append('file', pdf, (_ccScanRoll || 'scan') + '_answersheet.pdf');
+      const r = await api(`/copy-check/sessions/${sessionId}/sheets`, { method: 'POST', body: fd });
+      if (!r.ok) { const d = await r.json(); showToast(d.detail || 'Upload failed', 'error'); return; }
+      showToast('Scanned sheet uploaded!', 'success');
+      await loadCCDetail();
+    } catch(ex) { showToast(ex.message || 'Scan failed', 'error'); doneBtn.disabled = false; doneBtn.textContent = 'Done'; }
+  };
+
+  closeBtn.onclick = _closeCCScan;
+}
+
+function _closeCCScan() {
+  if (_ccScanStream) { _ccScanStream.getTracks().forEach(t => t.stop()); _ccScanStream = null; }
+  const m = document.getElementById('cc-scan-modal');
+  if (m) m.remove();
+}
+
+async function _buildScanPdf(pages) {
+  // Build a minimal PDF with all scanned images arranged as pages
+  // Uses raw PDF syntax — no external library needed
+  const pageW = 595, pageH = 842; // A4 in points
+
+  const imgObjs = await Promise.all(pages.map(async (dataUrl, idx) => {
+    // Convert base64 JPEG to binary
+    const b64 = dataUrl.split(',')[1];
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+
+    // Get image dimensions from JPEG header
+    let w = 1280, h = 960;
+    if (bytes[0] === 0xFF && bytes[1] === 0xD8) {
+      let pos = 2;
+      while (pos < bytes.length - 8) {
+        if (bytes[pos] === 0xFF && bytes[pos+1] >= 0xC0 && bytes[pos+1] <= 0xCF && bytes[pos+1] !== 0xC4) {
+          h = (bytes[pos+5] << 8) | bytes[pos+6];
+          w = (bytes[pos+7] << 8) | bytes[pos+8];
+          break;
+        }
+        pos += 2 + ((bytes[pos+2] << 8) | bytes[pos+3]);
+      }
+    }
+
+    // Scale to fit A4
+    const scale = Math.min(pageW / w, pageH / h);
+    const fw = Math.floor(w * scale), fh = Math.floor(h * scale);
+    const x = Math.floor((pageW - fw) / 2), y = Math.floor((pageH - fh) / 2);
+
+    return { bytes, fw, fh, x, y, idx: idx + 1, b64 };
+  }));
+
+  // Build PDF structure
+  const enc = new TextEncoder();
+  const chunks = [];
+  let offset = 0;
+  const offsets = [];
+
+  function write(str) {
+    const b = enc.encode(str);
+    chunks.push(b);
+    offset += b.length;
+  }
+  function writeRaw(bytes) {
+    chunks.push(bytes);
+    offset += bytes.length;
+  }
+  function obj(n) { offsets[n] = offset; write(`${n} 0 obj\n`); }
+  function endobj() { write('endobj\n'); }
+
+  write('%PDF-1.4\n');
+  // Catalog
+  obj(1); write('<< /Type /Catalog /Pages 2 0 R >>\n'); endobj();
+  // Pages
+  obj(2);
+  write(`<< /Type /Pages /Kids [`);
+  for (let i = 0; i < imgObjs.length; i++) write(` ${3 + i * 2} 0 R`);
+  write(` ] /Count ${imgObjs.length} >>\n`); endobj();
+
+  // Page + XObject pairs
+  for (let i = 0; i < imgObjs.length; i++) {
+    const { fw, fh, x, y, bytes: imgBytes, idx } = imgObjs[i];
+    const pageObjN = 3 + i * 2;
+    const xobjN = 4 + i * 2;
+    // Page
+    obj(pageObjN);
+    write(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageW} ${pageH}]\n`);
+    write(`   /Resources << /XObject << /Im${idx} ${xobjN} 0 R >> >>\n`);
+    const stream = `q ${fw} 0 0 ${fh} ${x} ${y} cm /Im${idx} Do Q\n`;
+    write(`   /Contents << /Length ${stream.length} >> >>\n`);
+    endobj();
+    write(`stream\n${stream}endstream\n`);
+    // Image XObject
+    obj(xobjN);
+    write(`<< /Type /XObject /Subtype /Image /Width ${imgObjs[i].fw} /Height ${imgObjs[i].fh}`);
+    write(` /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${imgBytes.length} >>\n`);
+    endobj();
+    write('stream\n'); writeRaw(imgBytes); write('\nendstream\n');
+  }
+
+  // Cross-reference
+  const xrefOffset = offset;
+  const n = 1 + imgObjs.length * 2;
+  write(`xref\n0 ${n + 2}\n0000000000 65535 f \n`);
+  for (let i = 1; i <= n; i++) {
+    write((offsets[i] || 0).toString().padStart(10, '0') + ' 00000 n \n');
+  }
+  write(`trailer\n<< /Size ${n + 2} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`);
+
+  // Combine all chunks into a single Blob
+  const totalLen = chunks.reduce((s, c) => s + c.length, 0);
+  const buf = new Uint8Array(totalLen);
+  let pos = 0;
+  for (const c of chunks) { buf.set(c, pos); pos += c.length; }
+  return new File([buf], 'answersheet.pdf', { type: 'application/pdf' });
+}
+
+// Expose function for inline onclick from session detail
+window.openCCScan = function(sessionId, roll) {
+  showCCScanModal(sessionId, roll);
+};
+
+/*
    SHARED FILES "" Admin uploads, all roles download
     */

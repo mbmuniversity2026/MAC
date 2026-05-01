@@ -830,7 +830,7 @@ input:focus,textarea:focus,select:focus{border-color:var(--input-focus);box-shad
 /* Mobile */
 @media(max-width:768px){
   .sidebar{position:fixed;top:0;left:0;bottom:0;z-index:50;box-shadow:4px 0 20px rgba(0,0,0,.18);width:260px!important;height:100vh!important;transform:translateX(-100%);transition:transform .25s cubic-bezier(.4,0,.2,1);display:flex!important}
-  .sidebar-inner{flex-direction:column!important}
+  .sidebar-inner{flex-direction:column!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch}
   .shell.sidebar-open .sidebar{transform:translateX(0)}
   .sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:49;backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px);transition:opacity .25s}
   .shell.sidebar-open .sidebar-overlay{display:block}
@@ -856,8 +856,12 @@ input:focus,textarea:focus,select:focus{border-color:var(--input-focus);box-shad
   .models-grid{grid-template-columns:1fr}
   .models-grid-admin{grid-template-columns:1fr}
   .heatmap-container{overflow-x:auto;padding-bottom:8px}
-  .quota-rings{gap:16px}
-  .ring-wrap{width:100px;height:100px}
+  .quota-rings{gap:16px;flex-wrap:wrap;justify-content:center}
+  .ring-wrap{width:120px;height:120px}
+  .ring-wrap canvas{width:120px!important;height:120px!important}
+  .table-responsive{overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%}
+  .cc-students-grid{overflow-x:auto}
+  .page{overflow-y:auto;overflow-x:hidden}
   .chat-input-wrap{padding:8px 10px 12px}
   .chat-messages{padding:12px}
   .modal{padding:24px 20px;margin:16px}
@@ -876,7 +880,9 @@ input:focus,textarea:focus,select:focus{border-color:var(--input-focus);box-shad
   .admin-tab{padding:8px 10px}
   .chart-card{padding:14px}
   .settings-cards{grid-template-columns:1fr}
-  .quota-rings{flex-direction:column;align-items:center}
+  .quota-rings{flex-direction:row;align-items:center;justify-content:center;flex-wrap:wrap;gap:12px}
+  .ring-wrap{width:110px;height:110px}
+  .ring-wrap canvas{width:110px!important;height:110px!important}
   .action-btns{gap:4px}
   .top-user-row{gap:8px}
   .top-user-info{width:60px}
@@ -894,9 +900,13 @@ input:focus,textarea:focus,select:focus{border-color:var(--input-focus);box-shad
   .menu-btn{display:none!important}
 }
 
+/* ── Heatmap tooltip ──────────────────────────────────── */
+.hm-tooltip{position:fixed;background:rgba(0,0,0,.85);color:#fff;padding:6px 12px;border-radius:8px;font-size:.75rem;pointer-events:none;z-index:9990;white-space:nowrap;transform:translateX(-50%);transition:opacity .15s}
+
 /* ── Global overflow fix — zero horizontal scroll ──────── */
 html,body{overflow-x:hidden;max-width:100vw}
-.main-content,.page{overflow-x:hidden;min-width:0}
+.main-content{overflow-x:hidden;min-width:0}
+.page{overflow-x:hidden;overflow-y:auto;min-width:0}
 /* Modals never overflow viewport */
 .modal{max-width:min(540px,calc(100vw - 24px));max-height:calc(100dvh - 24px);overflow-y:auto}
 /* All data tables scroll horizontally */
@@ -1340,3 +1350,13 @@ html,body{overflow-x:hidden;max-width:100vw}
 .badge-warn{background:rgba(194,112,58,.12);color:var(--accent);border:1px solid rgba(194,112,58,.28)}
 .badge-info{background:rgba(59,130,246,.1);color:var(--color-log);border:1px solid rgba(59,130,246,.25)}
 .badge-purple{background:rgba(124,58,237,.1);color:var(--color-redact);border:1px solid rgba(124,58,237,.25)}
+
+/* ── Copy Check Scan Mode ───────────────────────────────── */
+#cc-scan-modal{touch-action:none}
+#cc-scan-video{display:block}
+#cc-scan-guide{transition:box-shadow .2s}
+#cc-scan-capture:active{transform:scale(.92)}
+#cc-scan-close:hover{background:rgba(255,255,255,.25)!important}
+
+/* ── About Modal Premium ────────────────────────────────── */
+.about-hello{font-family:'Brush Script MT','Segoe Script',cursive;color:var(--accent)}

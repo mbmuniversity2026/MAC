@@ -1,9 +1,9 @@
 /* ═══════════════════════════════════════════════════════════
    MAC — Auth module
    Physics watermark · Floating labels · Card shake
-   Loaded BEFORE app.js. Functions reference globals from
-   app.js (state, navigate, API, etc.) which are resolved at
-   call time (after all scripts load).
+   Loaded before core.js globals are used. Functions reference
+   globals from core.js (state, navigate, API, etc.) resolved
+   at call time (after all scripts load).
    ═══════════════════════════════════════════════════════════ */
 
 /* ── Physics watermark word config ──────────────────────── */
@@ -338,7 +338,7 @@ function authPage() {
   var wmLayer  = '<div class="wm-layer" id="wm-layer" aria-hidden="true"></div>';
   var orbs     = '<div class="auth-orb auth-orb-1"></div><div class="auth-orb auth-orb-2"></div>';
   var footer   = '<div class="card-footer">' +
-    '<span class="auth-version">MAC v2.0</span>' +
+    '<span class="auth-version">MAC v0.0</span>' +
     '<div class="locale-wrap">' +
       '<button class="locale-btn" id="lang-picker-btn" onclick="showLangDropdown()">' +
         _SVG_GLOBE + '<span>' + native + '</span>' + _SVG_CHEV +
@@ -425,7 +425,7 @@ function bindAuth() {
   if (authMode === 'verify') _bindFl('fl-dob', 'auth-dob');
 
   /* Eye toggle */
-  bindEyeToggles(); /* defined in app.js */
+  bindEyeToggles();
 
   /* Back button (verify view) */
   var backBtn = document.getElementById('auth-back-btn');

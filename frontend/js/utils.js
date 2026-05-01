@@ -1,6 +1,15 @@
 function makeDonut(id, used, total, color) {
   const canvas = document.getElementById(id);
   if (!canvas) return;
+  // Fit canvas to its CSS container size to prevent overflow/overlap on mobile
+  const wrap = canvas.parentElement;
+  if (wrap) {
+    const size = Math.min(wrap.offsetWidth || 160, wrap.offsetHeight || 160);
+    canvas.width = size;
+    canvas.height = size;
+    canvas.style.width = size + 'px';
+    canvas.style.height = size + 'px';
+  }
   const remaining = Math.max(0, total - used);
   const cs = getComputedStyle(document.documentElement);
   const accentColor = color || cs.getPropertyValue('--accent').trim() || '#7c6ff7';
@@ -365,7 +374,7 @@ function workerJoinPage() {
     '<div class="auth-divider"><span>or</span></div>' +
     '<a href="/#login" class="alt-btn" onclick="navigate(\'login\');return false">' + _SVG_BACK + '<span>Back to Login</span></a>' +
     '<div class="card-footer">' +
-      '<span class="auth-version">MAC v2.0</span>' +
+      '<span class="auth-version">MAC v0.0</span>' +
       '<span style="font-size:11px;color:var(--muted)">GPU Cluster</span>' +
     '</div>' +
   '</div></div>';
