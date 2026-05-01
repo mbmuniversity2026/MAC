@@ -591,7 +591,7 @@ function bindSetPassword() {
     var btn = form.querySelector('[type=submit]');
     if (btn) { btn.disabled = true; btn.style.opacity = '.65'; }
     try {
-      var r = await api('/auth/set-password', { method: 'POST', body: JSON.stringify({ password: pw }) });
+      var r = await api('/auth/set-password', { method: 'POST', body: JSON.stringify({ new_password: pw, confirm_password: conf }) });
       if (!r.ok) { var d = await r.json(); showErr(d.detail?.message || 'Failed to set password'); if (btn) { btn.disabled = false; btn.style.opacity = ''; } return; }
       if (state.user) state.user.must_change_password = false;
       navigate('dashboard');
