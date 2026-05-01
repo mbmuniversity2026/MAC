@@ -13,9 +13,9 @@
 ; ===============================================================
 
 #define AppName "MAC - MBM AI Cloud"
-#define AppVersion "2.0.0"
+#define AppVersion "0.0"
 #define AppPublisher "MBM University, Jodhpur"
-#define AppURL "https://github.com/RamMAC17/MAC"
+#define AppURL "https://github.com/mbmuniversity2026/MAC"
 
 [Setup]
 AppId={{A8F3C2E1-4B7D-4F2A-9C8E-1D5F6A3B2E7C}
@@ -29,7 +29,7 @@ DefaultDirName={autopf}\MAC
 DefaultGroupName={#AppName}
 AllowNoIcons=yes
 OutputDir=dist
-OutputBaseFilename=MAC-Setup-{#AppVersion}
+OutputBaseFilename=MAC-v{#AppVersion}-Setup
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
@@ -121,7 +121,7 @@ Type: filesandordirs; Name: "{app}\nginx\ssl"
 
 [Messages]
 WelcomeLabel1=Welcome to MAC
-WelcomeLabel2=MBM AI Cloud — Self-Hosted AI Platform%n%nHi! I'm MAC, your AI assistant from MBM University, Jodhpur!%n%nThis will install MAC v{#AppVersion} on your computer.%n%nYou will choose to install as:%n  %u2022 HOST — Full admin server (database, API, web UI, AI models)%n  %u2022 WORKER — Contribute your GPU/CPU to an existing cluster%n%nRequirements:%n  %u2022 Docker Desktop (will be checked)%n  %u2022 NVIDIA GPU + drivers (for AI inference)%n  %u2022 8 GB RAM minimum
+WelcomeLabel2=MBM AI Cloud — Self-Hosted AI Platform%n%nHi! I'm MAC v{#AppVersion}, your AI assistant from MBM University, Jodhpur!%n%nThis will install MAC on your computer.%n%nYou will choose to install as:%n  %u2022 HOST — Full admin server (database, API, web UI, AI models)%n  %u2022 WORKER — Contribute your GPU/CPU to an existing cluster%n%nRequirements:%n  %u2022 Docker Desktop (will be checked)%n  %u2022 NVIDIA GPU + drivers (for AI inference)%n  %u2022 8 GB RAM minimum
 
 [Code]
 var

@@ -99,7 +99,7 @@ app = FastAPI(
     title="MAC — MBM AI Cloud",
     description="Self-hosted AI inference platform for MBM Engineering College. "
                 "OpenAI-compatible API powered by open-source models.",
-    version="1.0.0",
+    version="0.0",
     lifespan=lifespan,
     docs_url="/docs",
     redoc_url="/redoc",
@@ -197,25 +197,19 @@ async def root():
         return FileResponse(str(index_file))
     return {
         "name": "MAC — MBM AI Cloud",
-        "version": "1.0.0",
+        "version": "0.0",
         "docs": "/docs",
         "api": "/api/v1",
     }
 
 
-# ── SPA catch-all: serve index.html for all frontend routes ──
-@app.get("/{full_path:path}")
-async def spa_fallback(full_path: str):
-    """Serve SPA index.html for any non-API frontend route."""
-    # Don't intercept API, docs, static, or nginx-served special pages
-    if full_path.startswith(("api/", "docs", "redoc", "openapi.json", "static/", "ws/")) or full_path in ("install-cert", "ca.crt", "join", "manifest.json", "sw.js", "nginx-health"):
-        return JSONResponse(status_code=404, content={"detail": "Not found"})
-    index_file = FRONTEND_DIR / "index.html"
-    if index_file.exists():
-        return FileResponse(str(index_file))
-    return JSONResponse(status_code=404, content={"detail": "Not found"})
+# ── Health check ─────────────────────────────────────────────
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
 
 
+# ── API root — must be before catch-all ──────────────────────
 @app.get("/api/v1")
 async def api_root():
     from mac.services.model_service import ensure_prefetch_started
@@ -251,6 +245,19 @@ async def api_root():
             "files": "/api/v1/files",
         }
     }
+
+
+# ── SPA catch-all: serve index.html for all frontend routes ──
+@app.get("/{full_path:path}")
+async def spa_fallback(full_path: str):
+    """Serve SPA index.html for any non-API frontend route."""
+    # Don't intercept API, docs, static, or nginx-served special pages
+    if full_path.startswith(("api/", "docs", "redoc", "openapi.json", "static/", "ws/")) or full_path in ("install-cert", "ca.crt", "join", "manifest.json", "sw.js", "nginx-health", "health"):
+        return JSONResponse(status_code=404, content={"detail": "Not found"})
+    index_file = FRONTEND_DIR / "index.html"
+    if index_file.exists():
+        return FileResponse(str(index_file))
+    return JSONResponse(status_code=404, content={"detail": "Not found"})
 
 
 # ── Dev seed ─────────────────────────────────────────────
