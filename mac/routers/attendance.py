@@ -293,8 +293,34 @@ async def mark_attendance(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Mark attendance for a session with live face verification."""
+    """Mark attendance for a session with live face verification.
+    Enforces: (1) daily window, (2) session must be open, (3) NOW must be within session time window.
+    """
+    from mac.models.attendance import AttendanceSession
+
     await _check_attendance_window(db)
+
+    # Verify the session exists and is currently open
+    session_result = await db.execute(
+        select(AttendanceSession).where(AttendanceSession.id == req.session_id)
+    )
+    session = session_result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="Attendance session not found")
+    if not session.is_open:
+        raise HTTPException(status_code=403, detail={
+            "code": "window_closed",
+            "message": "Attendance window has closed. This session is no longer accepting check-ins.",
+        })
+
+    # Cross-check: session must be for today (reject back-dated attempts)
+    now_ist = datetime.now(IST)
+    if session.session_date != now_ist.date():
+        raise HTTPException(status_code=403, detail={
+            "code": "window_closed",
+            "message": "Attendance window has closed. This session is from a different date.",
+        })
+
     ip = request.client.host if request.client else None
     result = await attendance_service.mark_attendance(
         db, session_id=req.session_id, user_id=user.id,

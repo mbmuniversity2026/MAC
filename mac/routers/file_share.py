@@ -153,6 +153,66 @@ async def download_file(
     )
 
 
+# ── Preview (inline viewing before download) ─────────────────────────────────
+
+PREVIEWABLE_MIME = {
+    # Images
+    "image/jpeg", "image/png", "image/gif", "image/webp", "image/svg+xml",
+    # Video
+    "video/mp4", "video/webm", "video/ogg",
+    # Audio
+    "audio/mpeg", "audio/wav", "audio/ogg", "audio/mp3",
+    # Documents
+    "application/pdf",
+    # Text / code
+    "text/plain", "text/html", "text/css", "text/javascript",
+    "application/json", "text/markdown", "text/csv",
+    "text/x-python", "application/x-python",
+}
+
+
+@router.get("/{file_id}/preview")
+async def preview_file(
+    file_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Stream a file inline (not as attachment) for browser preview."""
+    shared = (await db.execute(
+        select(SharedFile).where(SharedFile.id == file_id)
+    )).scalar_one_or_none()
+
+    if not shared:
+        raise HTTPException(status_code=404, detail={"code": "not_found", "message": "File not found."})
+
+    if shared.expires_at and shared.expires_at < _utcnow():
+        raise HTTPException(status_code=410, detail={"code": "expired", "message": "File has expired."})
+
+    path = Path(shared.storage_path)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail={"code": "missing", "message": "File data missing."})
+
+    mime = shared.mime_type or "application/octet-stream"
+
+    # Only serve inline for safe previewable types
+    if mime not in PREVIEWABLE_MIME:
+        raise HTTPException(status_code=415, detail={
+            "code": "not_previewable",
+            "message": "This file type cannot be previewed inline.",
+        })
+
+    # For CSV: send as text/plain so browser renders it
+    if mime == "text/csv":
+        mime = "text/plain; charset=utf-8"
+
+    from fastapi.responses import FileResponse
+    return FileResponse(
+        path=str(path),
+        media_type=mime,
+        headers={"Content-Disposition": f'inline; filename="{shared.display_name or shared.filename}"'},
+    )
+
+
 # ── Admin: delete ─────────────────────────────────────────────────────────────
 
 @router.delete("/{file_id}", status_code=204)

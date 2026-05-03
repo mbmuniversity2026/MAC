@@ -22,6 +22,8 @@ from mac.routers import (
     features, hardware, network, system,
     # ── Session 2 additions ──
     cluster, academic, file_share,
+    # ── New features ──
+    voice_chat, video, thumbnail, activity,
 )
 from mac.routers import setup as setup_router  # avoid shadowing the `setup` name
 
@@ -51,6 +53,8 @@ async def lifespan(app: FastAPI):
     import mac.models.file_share  # noqa: F401
     import mac.models.video  # noqa: F401
     import mac.models.system_config  # noqa: F401
+    # ── New models ──
+    import mac.models.video  # noqa: F401 (VideoProject, VideoJob)
 
     # Create tables (dev only — production uses Alembic)
     if settings.is_dev:
@@ -150,6 +154,12 @@ app.include_router(setup_router.router, prefix="/api/v1")
 app.include_router(cluster.router, prefix="/api/v1")
 app.include_router(academic.router, prefix="/api/v1")
 app.include_router(file_share.router, prefix="/api/v1")
+
+# ── New feature routers ──
+app.include_router(voice_chat.router, prefix="/api/v1")
+app.include_router(video.router, prefix="/api/v1")
+app.include_router(thumbnail.router, prefix="/api/v1")
+app.include_router(activity.router, prefix="/api/v1")
 
 # Serve vanilla JS frontend static files
 if FRONTEND_DIR.exists():

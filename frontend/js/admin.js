@@ -50,6 +50,10 @@ async function renderAdmin() {
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
         <span>Live Activity</span>
       </div>
+      <div class="admin-tab ${adminTab==='video_studio'?'active':''}" data-tab="video_studio">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+        <span>Video Studio</span>
+      </div>
     </div>
     <div id="admin-content"><div class="loading-state"><div class="spinner"></div><span>Loading...</span></div></div>
   `;
@@ -71,6 +75,7 @@ async function renderAdmin() {
   else if (adminTab === 'guardrails') await renderAdminGuardrails();
   else if (adminTab === 'features') await renderAdminFeatures();
   else if (adminTab === 'activity') await renderAdminActivityStream();
+  else if (adminTab === 'video_studio') await renderVideoStudio();
 }
 
 async function renderAdminOverview() {
@@ -675,6 +680,346 @@ async function renderAdminRegistry() {
 
 
 
-/* 
+// ─────────────────────────────────────────────────────────
+//  LIVE ACTIVITY STREAM (IST real-time)
+// ─────────────────────────────────────────────────────────
+let _activityEs = null;
+
+async function renderAdminActivityStream() {
+  const el = document.getElementById('admin-content');
+  el.innerHTML = `
+    <div class="admin-header">
+      <div><h2>Live Activity</h2><p class="muted" style="margin:0">Real-time platform activity — all times in IST</p></div>
+      <button class="btn btn-sm btn-outline" onclick="_activityClear()">Clear</button>
+    </div>
+    <div id="activity-feed" style="max-height:70vh;overflow-y:auto;display:flex;flex-direction:column;gap:4px;padding:4px 0">
+      <div class="loading-state"><div class="spinner"></div><span>Connecting...</span></div>
+    </div>`;
+
+  // Close any existing SSE
+  if (_activityEs) { _activityEs.close(); _activityEs = null; }
+
+  const feed = document.getElementById('activity-feed');
+
+  function _appendEntry(e) {
+    const div = document.createElement('div');
+    div.style.cssText = 'display:flex;gap:10px;align-items:flex-start;padding:7px 12px;border-radius:8px;background:var(--surface);border:1px solid var(--border);font-size:.82rem;line-height:1.4';
+    div.innerHTML = `<span style="font-size:1rem;flex-shrink:0">${e.icon||'•'}</span>
+      <span style="color:var(--muted);font-size:.75rem;white-space:nowrap;flex-shrink:0;margin-top:1px">${esc(e.time||'')}</span>
+      <span style="color:var(--text)">${esc(e.message||'')}</span>`;
+    feed.insertBefore(div, feed.firstChild);
+    // Keep max 200 entries
+    while (feed.children.length > 200) feed.removeChild(feed.lastChild);
+  }
+
+  _activityEs = new EventSource(`${API}/admin/activity/stream`, {
+    // SSE doesn't support auth headers — backend should accept token via cookie or we use polling fallback
+  });
+
+  _activityEs.onopen = () => {
+    feed.innerHTML = '';
+  };
+  _activityEs.onmessage = e => {
+    try { _appendEntry(JSON.parse(e.data)); } catch {}
+  };
+  _activityEs.onerror = () => {
+    if (!feed.querySelector('.conn-error')) {
+      const div = document.createElement('div');
+      div.className = 'conn-error';
+      div.style.cssText = 'color:var(--muted);font-size:.8rem;padding:8px;text-align:center';
+      div.textContent = 'Reconnecting...';
+      feed.appendChild(div);
+    }
+  };
+}
+
+window._activityClear = () => {
+  const feed = document.getElementById('activity-feed');
+  if (feed) feed.innerHTML = '<div class="muted" style="text-align:center;padding:20px;font-size:.82rem">Feed cleared</div>';
+};
+
+// ─────────────────────────────────────────────────────────
+//  VIDEO STUDIO (admin-only)
+// ─────────────────────────────────────────────────────────
+let _vsProject = null;
+let _vsFiles = [];
+let _vsTimeline = [];
+
+async function renderVideoStudio() {
+  const el = document.getElementById('admin-content');
+  el.innerHTML = `
+    <div class="admin-header">
+      <div><h2>🎬 Video Studio</h2><p class="muted" style="margin:0">AI-assisted FFmpeg video editing</p></div>
+      <button class="btn btn-primary" id="vs-new-proj-btn">+ New Project</button>
+    </div>
+    <div id="vs-projects-list" style="margin-bottom:20px"></div>
+    <div id="vs-studio" style="display:none">
+      <div style="display:grid;grid-template-columns:240px 1fr 300px;gap:0;height:calc(100vh - 180px);background:#141210;border-radius:12px;overflow:hidden;border:1px solid var(--border)">
+        <!-- LEFT: Media Library -->
+        <div style="border-right:1px solid #2a2520;display:flex;flex-direction:column">
+          <div style="padding:12px;border-bottom:1px solid #2a2520;font-weight:600;font-size:.82rem;color:#ccc;display:flex;justify-content:space-between;align-items:center">
+            Media Library
+            <button class="btn btn-sm btn-outline" id="vs-upload-btn" style="font-size:.7rem;padding:3px 8px">Upload</button>
+          </div>
+          <input type="file" id="vs-file-input" multiple accept="video/*,audio/*,image/*" style="display:none">
+          <div id="vs-media-grid" style="flex:1;overflow-y:auto;padding:8px;display:grid;grid-template-columns:1fr 1fr;gap:6px"></div>
+        </div>
+        <!-- CENTER: Preview + Timeline -->
+        <div style="display:flex;flex-direction:column;background:#0a0806">
+          <div style="flex:1;display:flex;align-items:center;justify-content:center;padding:16px">
+            <div id="vs-preview" style="width:100%;max-width:560px;aspect-ratio:16/9;background:#000;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#444;font-size:.85rem">
+              Select media to preview
+            </div>
+          </div>
+          <div style="height:100px;border-top:1px solid #2a2520;background:#0d0b09;padding:8px 12px">
+            <div style="font-size:.72rem;color:#666;margin-bottom:6px">Timeline</div>
+            <div id="vs-timeline" style="height:60px;background:#1a1715;border-radius:6px;overflow-x:auto;display:flex;align-items:center;padding:0 8px;gap:4px">
+              <span style="color:#444;font-size:.75rem">Drag media from library to add to timeline</span>
+            </div>
+          </div>
+        </div>
+        <!-- RIGHT: AI Agent -->
+        <div style="border-left:1px solid #2a2520;display:flex;flex-direction:column">
+          <div style="padding:12px;border-bottom:1px solid #2a2520;font-weight:600;font-size:.82rem;color:#ccc">AI Agent</div>
+          <div id="vs-agent-msgs" style="flex:1;overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:8px">
+            <div style="background:#1a1715;border-radius:8px;padding:10px;font-size:.78rem;color:#888">
+              Tell me what to do in plain English or Hindi.<br>Example: "Trim the video to first 2 minutes" or "Add audio to video"
+            </div>
+          </div>
+          <div style="padding:8px;border-top:1px solid #2a2520">
+            <div id="vs-cmd-card" style="display:none;background:#1a1715;border-radius:8px;padding:10px;margin-bottom:8px;font-size:.78rem">
+              <div id="vs-cmd-desc" style="color:#ccc;margin-bottom:6px"></div>
+              <pre id="vs-cmd-pre" style="background:#0d0b09;padding:8px;border-radius:6px;color:#7ec8a0;font-size:.72rem;overflow-x:auto;white-space:pre-wrap;margin:0 0 8px"></pre>
+              <div style="display:flex;gap:6px">
+                <button class="btn btn-sm btn-primary" id="vs-run-btn">▶ Run</button>
+                <button class="btn btn-sm btn-outline" id="vs-edit-cmd-btn">✏ Edit</button>
+                <button class="btn btn-sm" style="background:#2a2520;color:#aaa;border:none" id="vs-cancel-cmd-btn">✗</button>
+              </div>
+            </div>
+            <div id="vs-progress" style="display:none;margin-bottom:8px">
+              <div style="height:4px;background:#2a2520;border-radius:2px;overflow:hidden">
+                <div id="vs-progress-bar" style="height:100%;background:var(--accent);width:0%;transition:width .3s"></div>
+              </div>
+              <div id="vs-progress-txt" style="font-size:.72rem;color:#888;margin-top:4px">Running...</div>
+            </div>
+            <div style="display:flex;gap:6px">
+              <input id="vs-agent-input" type="text" placeholder="Describe what to edit..." style="flex:1;background:#1a1715;border:1px solid #2a2520;border-radius:6px;padding:7px 10px;color:#ccc;font-size:.8rem;outline:none">
+              <button class="btn btn-sm btn-primary" id="vs-agent-send">Send</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+
+  // Load projects
+  await _vsLoadProjects();
+
+  document.getElementById('vs-new-proj-btn').onclick = async () => {
+    const name = prompt('Project name:', 'My Video Project');
+    if (!name) return;
+    try {
+      const proj = await apiJson('/admin/video/projects', { method: 'POST', body: JSON.stringify({ name }) });
+      showToast('Project created', 'success');
+      await _vsLoadProjects();
+      _vsOpenProject(proj.id, proj.name);
+    } catch (e) { showToast('Failed: ' + e.message, 'error'); }
+  };
+}
+
+async function _vsLoadProjects() {
+  const listEl = document.getElementById('vs-projects-list');
+  if (!listEl) return;
+  try {
+    const projs = await apiJson('/admin/video/projects');
+    if (!projs.length) {
+      listEl.innerHTML = '<p class="muted" style="font-size:.82rem">No projects yet. Create one to start editing.</p>';
+      return;
+    }
+    listEl.innerHTML = `<div style="display:flex;gap:8px;flex-wrap:wrap">
+      ${projs.map(p => `<div style="padding:10px 16px;background:var(--surface);border:1px solid var(--border);border-radius:8px;cursor:pointer;font-size:.82rem" onclick="_vsOpenProject('${esc(p.id)}','${esc(p.name)}')">
+        <div style="font-weight:600">${esc(p.name)}</div>
+        <div style="color:var(--muted);font-size:.72rem">${p.file_count} files · ${timeAgo(p.updated_at)}</div>
+      </div>`).join('')}
+    </div>`;
+  } catch (e) {
+    listEl.innerHTML = `<div class="error-state"><p>${esc(String(e))}</p></div>`;
+  }
+}
+
+async function _vsOpenProject(projectId, projectName) {
+  _vsProject = { id: projectId, name: projectName };
+  const studio = document.getElementById('vs-studio');
+  if (studio) studio.style.display = '';
+
+  await _vsRefreshMedia();
+
+  // Upload button
+  const uploadBtn = document.getElementById('vs-upload-btn');
+  const fileInput = document.getElementById('vs-file-input');
+  if (uploadBtn && fileInput) {
+    uploadBtn.onclick = () => fileInput.click();
+    fileInput.onchange = async e => {
+      fileInput.value = '';
+      for (const file of Array.from(e.target.files)) {
+        const fd = new FormData();
+        fd.append('file', file);
+        try {
+          await api(`/admin/video/projects/${projectId}/upload`, { method: 'POST', body: fd });
+          showToast('Uploaded: ' + file.name, 'success');
+        } catch (ex) { showToast('Upload failed: ' + ex.message, 'error'); }
+      }
+      await _vsRefreshMedia();
+    };
+  }
+
+  // AI Agent
+  const agentInput = document.getElementById('vs-agent-input');
+  const agentSend = document.getElementById('vs-agent-send');
+  if (agentSend && agentInput) {
+    agentSend.onclick = () => _vsAgentSend(projectId);
+    agentInput.onkeydown = e => { if (e.key === 'Enter') _vsAgentSend(projectId); };
+  }
+}
+
+async function _vsRefreshMedia() {
+  if (!_vsProject) return;
+  const grid = document.getElementById('vs-media-grid');
+  if (!grid) return;
+  try {
+    const proj = await apiJson(`/admin/video/projects/${_vsProject.id}`);
+    _vsFiles = proj.files || [];
+    if (!_vsFiles.length) {
+      grid.innerHTML = '<div style="grid-column:1/-1;color:#555;font-size:.75rem;text-align:center;padding:20px">Upload media to start</div>';
+      return;
+    }
+    grid.innerHTML = _vsFiles.map(f => {
+      const icon = f.media_type === 'video' ? '🎬' : (f.media_type === 'audio' ? '🎵' : '🖼');
+      return `<div style="background:#1a1715;border-radius:6px;padding:6px;cursor:pointer;border:1px solid #2a2520" title="${esc(f.filename)}"
+        onclick="_vsPreviewMedia('${esc(f.path)}','${esc(f.mime)}')">
+        <div style="font-size:1.4rem;text-align:center;margin-bottom:4px">${icon}</div>
+        <div style="font-size:.65rem;color:#888;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(f.filename)}</div>
+        <div style="font-size:.6rem;color:#555">${fmtBytes(f.size)}</div>
+      </div>`;
+    }).join('');
+  } catch (e) {
+    grid.innerHTML = `<div style="grid-column:1/-1;color:var(--danger);font-size:.75rem">${esc(String(e))}</div>`;
+  }
+}
+
+window._vsPreviewMedia = (path, mime) => {
+  const preview = document.getElementById('vs-preview');
+  if (!preview) return;
+  if (mime && mime.startsWith('video/')) {
+    preview.innerHTML = `<video controls style="width:100%;height:100%;border-radius:8px" src="${esc(path)}"></video>`;
+  } else if (mime && mime.startsWith('audio/')) {
+    preview.innerHTML = `<audio controls src="${esc(path)}" style="width:90%"></audio>`;
+  } else if (mime && mime.startsWith('image/')) {
+    preview.innerHTML = `<img src="${esc(path)}" style="max-width:100%;max-height:100%;border-radius:8px;object-fit:contain" alt="preview">`;
+  }
+};
+
+async function _vsAgentSend(projectId) {
+  const input = document.getElementById('vs-agent-input');
+  const msgs = document.getElementById('vs-agent-msgs');
+  if (!input || !msgs) return;
+  const instruction = input.value.trim();
+  if (!instruction) return;
+  input.value = '';
+
+  // User message
+  const userDiv = document.createElement('div');
+  userDiv.style.cssText = 'background:rgba(212,131,74,.15);border-radius:8px;padding:8px 10px;font-size:.78rem;color:#ccc;align-self:flex-end;max-width:90%';
+  userDiv.textContent = instruction;
+  msgs.appendChild(userDiv);
+  msgs.scrollTop = msgs.scrollHeight;
+
+  const loadDiv = document.createElement('div');
+  loadDiv.style.cssText = 'background:#1a1715;border-radius:8px;padding:8px 10px;font-size:.78rem;color:#666';
+  loadDiv.textContent = 'Generating command...';
+  msgs.appendChild(loadDiv);
+  msgs.scrollTop = msgs.scrollHeight;
+
+  try {
+    const result = await apiJson(`/admin/video/projects/${projectId}/agent`, {
+      method: 'POST',
+      body: JSON.stringify({ instruction }),
+    });
+    loadDiv.remove();
+
+    const aiDiv = document.createElement('div');
+    aiDiv.style.cssText = 'background:#1a1715;border-radius:8px;padding:8px 10px;font-size:.78rem;color:#aaa';
+    aiDiv.textContent = result.description || 'Here is the command:';
+    msgs.appendChild(aiDiv);
+
+    // Show command card
+    const cmdCard = document.getElementById('vs-cmd-card');
+    const cmdDesc = document.getElementById('vs-cmd-desc');
+    const cmdPre = document.getElementById('vs-cmd-pre');
+    if (cmdCard && cmdDesc && cmdPre) {
+      cmdCard.style.display = '';
+      cmdDesc.textContent = result.description || '';
+      cmdPre.textContent = result.command || '';
+
+      document.getElementById('vs-run-btn').onclick = () => _vsRunCommand(projectId, result.command, result.description);
+      document.getElementById('vs-edit-cmd-btn').onclick = () => {
+        const newCmd = prompt('Edit FFmpeg command:', cmdPre.textContent);
+        if (newCmd) cmdPre.textContent = newCmd;
+      };
+      document.getElementById('vs-cancel-cmd-btn').onclick = () => { cmdCard.style.display = 'none'; };
+    }
+  } catch (e) {
+    loadDiv.style.color = 'var(--danger)';
+    loadDiv.textContent = 'Error: ' + e.message;
+  }
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+async function _vsRunCommand(projectId, command, description) {
+  const cmdCard = document.getElementById('vs-cmd-card');
+  const progress = document.getElementById('vs-progress');
+  const progressBar = document.getElementById('vs-progress-bar');
+  const progressTxt = document.getElementById('vs-progress-txt');
+  if (cmdCard) cmdCard.style.display = 'none';
+  if (progress) progress.style.display = '';
+
+  try {
+    // Create job
+    const job = await apiJson(`/admin/video/projects/${projectId}/jobs`, {
+      method: 'POST',
+      body: JSON.stringify({ command, description }),
+    });
+
+    // Run via SSE
+    const es = new EventSource(`${API}/admin/video/jobs/${job.id}/run`);
+    es.onmessage = e => {
+      try {
+        const frame = JSON.parse(e.data);
+        if (frame.type === 'progress') {
+          if (progressBar) progressBar.style.width = frame.pct + '%';
+          if (progressTxt) progressTxt.textContent = frame.pct + '% complete';
+        } else if (frame.type === 'done') {
+          if (progressBar) progressBar.style.width = '100%';
+          if (progressTxt) progressTxt.textContent = '✅ Complete!';
+          es.close();
+          showToast('FFmpeg job complete!', 'success');
+          setTimeout(() => { if (progress) progress.style.display = 'none'; _vsRefreshMedia(); }, 2000);
+        } else if (frame.type === 'error') {
+          if (progressTxt) progressTxt.textContent = '❌ Error: ' + frame.message;
+          if (progressBar) progressBar.style.background = 'var(--danger)';
+          es.close();
+        }
+      } catch {}
+    };
+    es.onerror = () => {
+      if (progressTxt) progressTxt.textContent = 'Connection error';
+      es.close();
+    };
+  } catch (e) {
+    if (progressTxt) progressTxt.textContent = 'Failed: ' + e.message;
+    showToast('Job failed: ' + e.message, 'error');
+  }
+}
+
+/*
    ADMIN "" Cluster / Nodes Management
     */

@@ -29,6 +29,15 @@ DEFAULT_FLAGS: list[tuple[str, str, str, list[str]]] = [
     ("dark_mode",        "Dark Mode",            "User-toggleable dark theme.",     ["student", "faculty", "admin"]),
     ("guest_access",     "Guest Access",         "Anonymous read-only access.",     []),
     ("video_studio",     "Video Studio",         "FFmpeg-driven video editor.",     ["admin"]),
+    # ── Per-model feature flags (Phase 5) ────────────────────────────────
+    ("model_chat",       "Chat Models",          "Qwen2.5-7B chat/general models.", ["student", "faculty", "admin"]),
+    ("model_code",       "Code Models",          "Qwen2.5-Coder programming models.",["student", "faculty", "admin"]),
+    ("model_reasoning",  "Reasoning Models",     "DeepSeek-R1 deep reasoning.",     ["student", "faculty", "admin"]),
+    ("model_vision",     "Vision Models",        "Image understanding models.",     ["student", "faculty", "admin"]),
+    ("model_image_gen",  "Image Generation",     "Stable Diffusion image creation.", ["student", "faculty", "admin"]),
+    ("model_video_gen",  "Video Generation",     "AI video generation models.",     ["student", "faculty", "admin"]),
+    ("model_voice",      "Voice Chat",           "Whisper + TTS voice pipeline.",   ["student", "faculty", "admin"]),
+    ("model_thumbnail",  "Thumbnail Generator",  "AI-assisted thumbnail creator.",  ["student", "faculty", "admin"]),
 ]
 
 

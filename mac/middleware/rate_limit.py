@@ -15,14 +15,28 @@ async def check_rate_limit(
     db: AsyncSession = Depends(get_db),
 ) -> User:
     """Check that the user hasn't exceeded hourly request or daily token limits.
-    Injects X-RateLimit-* headers on the response."""
+    Injects X-RateLimit-* headers on the response.
+
+    ADMIN RULE: Admin users are exempt from ALL rate limits — unlimited access forever.
+    """
+    # Admin: zero quota, zero rate limits, unlimited everything.
+    if user.role == "admin":
+        request.state.rate_limit_headers = {
+            "X-RateLimit-Limit": "unlimited",
+            "X-RateLimit-Remaining": "unlimited",
+            "X-RateLimit-Used": "0",
+            "X-TokenLimit-Limit": "unlimited",
+            "X-TokenLimit-Remaining": "unlimited",
+            "X-TokenLimit-Used": "0",
+        }
+        return user
+
     reqs = await get_requests_this_hour(db, user.id)
     tokens = await get_tokens_used_today(db, user.id)
 
     req_limit = settings.rate_limit_requests_per_hour
     token_limit = settings.rate_limit_tokens_per_day
 
-    # Inject rate-limit headers via request.state so middleware can add them
     request.state.rate_limit_headers = {
         "X-RateLimit-Limit": str(req_limit),
         "X-RateLimit-Remaining": str(max(0, req_limit - reqs)),

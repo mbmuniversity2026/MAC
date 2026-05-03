@@ -158,6 +158,10 @@ function renderChat() {
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
                 </button>
                 <input type="file" id="stt-file" accept="audio/*,.mp3,.wav,.ogg,.m4a,.webm" style="display:none">
+                <button class="chat-btn-icon voice-btn" id="voice-chat-btn" title="Voice Chat — speak with MAC" style="color:var(--accent);position:relative">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+                  <span style="position:absolute;top:-3px;right:-3px;width:7px;height:7px;background:var(--accent);border-radius:50%;display:none" id="voice-live-dot"></span>
+                </button>
               </div>
               <div class="chat-input-right">
                 <span id="chat-status" class="chat-status-text"></span>
@@ -330,6 +334,10 @@ function bindChat() {
   }
   loadModelOptions();
   loadActiveModelBadge();
+
+  // Voice chat button
+  const voiceBtn = document.getElementById('voice-chat-btn');
+  if (voiceBtn) voiceBtn.onclick = openVoiceChat;
 }
 
 async function loadModelOptions() {
@@ -636,7 +644,210 @@ async function sendAgentMessage(query) {
   msgs.scrollTop = msgs.scrollHeight;
 }
 
-/* 
+// ─────────────────────────────────────────────────────────
+//  VOICE CHAT — WebSocket voice-to-voice pipeline
+// ─────────────────────────────────────────────────────────
+let _voiceWs = null;
+let _voiceMediaRecorder = null;
+let _voiceAudioCtx = null;
+let _voiceAudioQueue = [];
+let _voicePlaying = false;
+let _voiceTranscript = [];
+
+function _voiceWaveAnim(canvasId, stream) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return null;
+  const ctx = canvas.getContext('2d');
+  const analyser = (_voiceAudioCtx || (window.AudioContext || window.webkitAudioContext) && new AudioContext()).createAnalyser();
+  analyser.fftSize = 64;
+  const src = analyser.context.createMediaStreamSource(stream);
+  src.connect(analyser);
+  const data = new Uint8Array(analyser.frequencyBinCount);
+  let raf;
+  function draw() {
+    raf = requestAnimationFrame(draw);
+    analyser.getByteFrequencyData(data);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const w = canvas.width / data.length;
+    const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#d4834a';
+    data.forEach((v, i) => {
+      const h = (v / 255) * canvas.height;
+      ctx.fillStyle = accent;
+      ctx.globalAlpha = 0.8;
+      ctx.fillRect(i * w, canvas.height - h, w - 2, h);
+    });
+    ctx.globalAlpha = 1;
+  }
+  draw();
+  return { stop: () => { cancelAnimationFrame(raf); ctx.clearRect(0, 0, canvas.width, canvas.height); } };
+}
+
+async function _voicePlayChunk(base64Audio) {
+  _voiceAudioQueue.push(base64Audio);
+  if (_voicePlaying) return;
+  _voicePlaying = true;
+  while (_voiceAudioQueue.length) {
+    const chunk = _voiceAudioQueue.shift();
+    try {
+      const bytes = Uint8Array.from(atob(chunk), c => c.charCodeAt(0));
+      const audioCtx = _voiceAudioCtx || (_voiceAudioCtx = new (window.AudioContext || window.webkitAudioContext)());
+      const buf = await audioCtx.decodeAudioData(bytes.buffer.slice());
+      await new Promise(resolve => {
+        const src = audioCtx.createBufferSource();
+        src.buffer = buf;
+        src.connect(audioCtx.destination);
+        src.onended = resolve;
+        src.start();
+      });
+    } catch (e) {
+      console.warn('[Voice] Audio decode error:', e);
+    }
+  }
+  _voicePlaying = false;
+}
+
+function _voiceSetStatus(text, overlay) {
+  const el = (overlay || document).getElementById('voice-status-text');
+  if (el) el.textContent = text;
+}
+
+function openVoiceChat() {
+  if (document.getElementById('voice-overlay')) return;
+  const overlay = document.createElement('div');
+  overlay.id = 'voice-overlay';
+  overlay.style.cssText = `
+    position:fixed;inset:0;z-index:9000;background:rgba(10,8,6,.96);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    font-family:var(--font);color:var(--text);
+  `;
+  overlay.innerHTML = `
+    <div style="text-align:center;max-width:480px;width:100%;padding:24px">
+      <div style="font-size:1.1rem;font-weight:700;color:var(--accent);margin-bottom:4px">Voice Chat</div>
+      <div id="voice-status-text" style="font-size:.85rem;color:var(--muted);margin-bottom:20px;min-height:1.2em">Connecting...</div>
+      <canvas id="voice-wave-canvas" width="320" height="60" style="width:100%;max-width:320px;border-radius:8px;background:rgba(255,255,255,.04);margin-bottom:20px"></canvas>
+      <div id="voice-transcript-area" style="width:100%;max-height:240px;overflow-y:auto;text-align:left;padding:8px 12px;background:rgba(255,255,255,.04);border-radius:10px;font-size:.82rem;line-height:1.6;margin-bottom:20px;min-height:48px">
+        <span style="color:var(--muted);font-style:italic">Your conversation will appear here...</span>
+      </div>
+      <div style="display:flex;gap:12px;justify-content:center">
+        <button id="voice-mute-btn" style="padding:10px 20px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer;font-size:.85rem">🎙 Mute</button>
+        <button id="voice-end-btn" style="padding:10px 20px;border-radius:8px;border:none;background:var(--danger,#dc2626);color:#fff;cursor:pointer;font-size:.85rem;font-weight:600">End Voice Chat</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  let waveController = null;
+  let muted = false;
+  let accLlm = '';
+
+  // End button
+  overlay.querySelector('#voice-end-btn').onclick = closeVoiceChat;
+  // Mute button
+  overlay.querySelector('#voice-mute-btn').onclick = () => {
+    muted = !muted;
+    if (_voiceMediaRecorder && _voiceMediaRecorder.stream) {
+      _voiceMediaRecorder.stream.getAudioTracks().forEach(t => { t.enabled = !muted; });
+    }
+    overlay.querySelector('#voice-mute-btn').textContent = muted ? '🔇 Unmute' : '🎙 Mute';
+  };
+
+  const transcriptArea = overlay.querySelector('#voice-transcript-area');
+  function appendTranscript(role, text) {
+    if (!text.trim()) return;
+    const div = document.createElement('div');
+    div.style.cssText = `margin:4px 0;padding:4px 8px;border-radius:6px;background:${role==='user'?'rgba(212,131,74,.15)':'rgba(255,255,255,.06)'}`;
+    div.innerHTML = `<b style="color:${role==='user'?'var(--accent)':'var(--text)'}">${role==='user'?'You':'MAC'}:</b> ${esc(text)}`;
+    if (transcriptArea.querySelector('span')) transcriptArea.innerHTML = '';
+    transcriptArea.appendChild(div);
+    transcriptArea.scrollTop = transcriptArea.scrollHeight;
+    // Also add to text chat transcript
+    _voiceTranscript.push({ role, content: text });
+  }
+
+  // Connect WebSocket
+  const wsProto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const wsUrl = `${wsProto}://${location.host}/api/v1/voice/stream?token=${state.token || ''}`;
+  const ws = new WebSocket(wsUrl);
+  _voiceWs = ws;
+
+  ws.onopen = async () => {
+    _voiceSetStatus('Listening — speak now', overlay);
+    ws.send(JSON.stringify({ type: 'start' }));
+
+    // Start mic
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      waveController = _voiceWaveAnim('voice-wave-canvas', stream);
+
+      const mr = new MediaRecorder(stream, { mimeType: MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm' });
+      _voiceMediaRecorder = mr;
+      mr.ondataavailable = e => {
+        if (e.data && e.data.size > 0 && ws.readyState === WebSocket.OPEN) {
+          e.data.arrayBuffer().then(buf => ws.send(buf));
+        }
+      };
+      mr.start(200); // send chunks every 200ms for low-latency VAD
+    } catch (err) {
+      _voiceSetStatus('Mic access denied', overlay);
+    }
+  };
+
+  ws.onmessage = async e => {
+    try {
+      const frame = JSON.parse(e.data);
+      if (frame.type === 'transcript') {
+        _voiceSetStatus('Processing...', overlay);
+        appendTranscript('user', frame.text);
+        accLlm = '';
+      } else if (frame.type === 'llm_chunk') {
+        accLlm += frame.text;
+        _voiceSetStatus('MAC is responding...', overlay);
+      } else if (frame.type === 'audio_chunk') {
+        _voiceSetStatus('Speaking...', overlay);
+        await _voicePlayChunk(frame.data);
+      } else if (frame.type === 'done') {
+        if (accLlm) appendTranscript('assistant', accLlm);
+        accLlm = '';
+        _voiceSetStatus('Listening — speak now', overlay);
+      } else if (frame.type === 'error') {
+        _voiceSetStatus('Error: ' + frame.message, overlay);
+      }
+    } catch {}
+  };
+
+  ws.onerror = () => _voiceSetStatus('Connection error', overlay);
+  ws.onclose = () => {
+    _voiceSetStatus('Disconnected', overlay);
+    if (waveController) waveController.stop();
+    if (_voiceMediaRecorder) { try { _voiceMediaRecorder.stop(); } catch {} }
+  };
+
+  // Live dot on button
+  const liveDot = document.getElementById('voice-live-dot');
+  if (liveDot) liveDot.style.display = '';
+}
+
+function closeVoiceChat() {
+  const overlay = document.getElementById('voice-overlay');
+  if (overlay) overlay.remove();
+  if (_voiceWs) { try { _voiceWs.close(); } catch {} _voiceWs = null; }
+  if (_voiceMediaRecorder) { try { _voiceMediaRecorder.stop(); _voiceMediaRecorder.stream.getTracks().forEach(t => t.stop()); } catch {} _voiceMediaRecorder = null; }
+  _voiceAudioQueue = [];
+  _voicePlaying = false;
+  const liveDot = document.getElementById('voice-live-dot');
+  if (liveDot) liveDot.style.display = 'none';
+
+  // If there's transcript, add it to the text chat as a summary
+  if (_voiceTranscript.length) {
+    _voiceTranscript.forEach(m => {
+      if (currentSession) currentSession.messages.push(m);
+    });
+    _voiceTranscript = [];
+    persistSession();
+    renderMessages();
+  }
+}
+
+/*
    ADMIN PANEL "" Full Control Dashboard
     */
 let adminTab = localStorage.getItem('mac_admin_tab') || 'overview';

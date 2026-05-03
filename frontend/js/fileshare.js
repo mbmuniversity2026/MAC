@@ -70,12 +70,14 @@ async function renderFileShare() {
               <td style="font-size:.82rem">${fmtBytes(f.size_bytes || 0)}</td>
               <td style="font-size:.78rem;color:var(--muted)">${timeAgo(f.created_at)}</td>
               <td style="font-size:.82rem">${f.download_count || 0}</td>
-              <td>
-                <button class="btn btn-sm btn-outline" onclick="_fsDownload('${esc(f.id)}','${esc(f.display_name || f.filename)}')">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                  Download
+              <td style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+                <button class="btn btn-sm" style="background:var(--surface);border:1px solid var(--border)" onclick="_fsPreview('${esc(f.id)}','${esc(f.display_name || f.filename)}','${esc(f.mime_type||'')}')">
+                  👁 Preview
                 </button>
-                ${isAdmin ? `<button class="btn btn-sm btn-danger-outline" style="margin-left:4px" onclick="_fsDelete('${esc(f.id)}')">Delete</button>` : ''}
+                <button class="btn btn-sm btn-outline" onclick="_fsDownload('${esc(f.id)}','${esc(f.display_name || f.filename)}')">
+                  ⬇ Download
+                </button>
+                ${isAdmin ? `<button class="btn btn-sm btn-danger-outline" onclick="_fsDelete('${esc(f.id)}')">Delete</button>` : ''}
               </td>
             </tr>`).join('')}
         </tbody>
@@ -96,6 +98,63 @@ window._fsDownload = async (fileId, fileName) => {
     a.href = url; a.download = fileName; a.click();
     URL.revokeObjectURL(url);
   } catch { showToast('Download failed', 'error'); }
+};
+
+window._fsPreview = (fileId, fileName, mimeType) => {
+  const previewUrl = `${API}/files/${fileId}/preview`;
+  const authUrl = previewUrl + '?token=' + encodeURIComponent(state.token || '');
+
+  const modal = document.createElement('div');
+  modal.style.cssText = `position:fixed;inset:0;z-index:9500;background:rgba(0,0,0,.85);display:flex;flex-direction:column;align-items:center;justify-content:flex-start;overflow:auto;padding:20px`;
+  modal.onclick = e => { if (e.target === modal) modal.remove(); };
+
+  const isImage = mimeType.startsWith('image/');
+  const isVideo = mimeType.startsWith('video/');
+  const isAudio = mimeType.startsWith('audio/');
+  const isPdf   = mimeType === 'application/pdf';
+  const isText  = mimeType.startsWith('text/') || mimeType === 'application/json';
+
+  let content;
+  const hdr = `<div style="width:100%;max-width:900px;display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+    <span style="font-weight:600;color:#fff;font-size:.92rem">${esc(fileName)}</span>
+    <div style="display:flex;gap:8px">
+      <button onclick="_fsDownload('${esc(fileId)}','${esc(fileName)}')" style="padding:6px 14px;border-radius:6px;border:1px solid #555;background:#333;color:#fff;cursor:pointer;font-size:.8rem">⬇ Download</button>
+      <button onclick="this.closest('[style]').remove()" style="padding:6px 14px;border-radius:6px;border:none;background:#555;color:#fff;cursor:pointer;font-size:.8rem">✕ Close</button>
+    </div>
+  </div>`;
+
+  if (isPdf) {
+    content = `<iframe src="${previewUrl}" style="width:100%;max-width:900px;height:80vh;border:none;border-radius:8px" title="${esc(fileName)}"></iframe>`;
+  } else if (isImage) {
+    content = `<img src="${previewUrl}" style="max-width:900px;max-height:80vh;border-radius:8px;object-fit:contain" alt="${esc(fileName)}">`;
+  } else if (isVideo) {
+    content = `<video controls style="width:100%;max-width:900px;max-height:80vh;border-radius:8px" src="${previewUrl}"></video>`;
+  } else if (isAudio) {
+    content = `<div style="padding:32px;background:#1a1a1a;border-radius:12px;max-width:500px;width:100%"><p style="color:#ccc;margin:0 0 16px;text-align:center">${esc(fileName)}</p><audio controls style="width:100%" src="${previewUrl}"></audio></div>`;
+  } else if (isText) {
+    // Fetch and show as code block
+    content = `<div id="fs-text-preview" style="width:100%;max-width:900px;max-height:70vh;overflow:auto;background:#0d1117;border-radius:8px;padding:16px"><pre style="color:#e6edf3;font-size:.8rem;margin:0;white-space:pre-wrap">Loading...</pre></div>`;
+    setTimeout(async () => {
+      try {
+        const r = await fetch(previewUrl, { headers: { Authorization: 'Bearer ' + (state.token||'') } });
+        const txt = await r.text();
+        const pre = modal.querySelector('#fs-text-preview pre');
+        if (pre) pre.textContent = txt.slice(0, 100000); // cap at 100k chars
+      } catch (e) {
+        const pre = modal.querySelector('#fs-text-preview pre');
+        if (pre) pre.textContent = 'Preview failed: ' + e.message;
+      }
+    }, 100);
+  } else {
+    content = `<div style="padding:40px;background:#1a1a1a;border-radius:12px;text-align:center;color:#ccc;max-width:400px">
+      <p style="font-size:2rem;margin:0 0 12px">📄</p>
+      <p style="margin:0 0 16px">${esc(fileName)}</p>
+      <p style="font-size:.8rem;color:#888">Preview not available for this file type.</p>
+    </div>`;
+  }
+
+  modal.innerHTML = hdr + content;
+  document.body.appendChild(modal);
 };
 
 window._fsDelete = async (fileId) => {

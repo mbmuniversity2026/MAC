@@ -18,11 +18,18 @@ from mac.services import feature_flag_service
 
 def feature_required(feature_key: str):
     """Dependency factory. Returns a dependency that ensures the flag is enabled
-    for the calling user's role."""
+    for the calling user's role.
+
+    ADMIN RULE: Admin users always pass — no feature flag can restrict them.
+    Feature flags only apply to faculty and student roles.
+    """
     async def _check(
         user: User = Depends(get_current_user),
         db: AsyncSession = Depends(get_db),
     ) -> User:
+        # Admin has unlimited access to every feature, always.
+        if user.role == "admin":
+            return user
         if not await feature_flag_service.is_enabled(db, feature_key, user.role):
             raise HTTPException(status_code=403, detail={
                 "code": "feature_disabled",
