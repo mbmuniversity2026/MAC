@@ -8,16 +8,16 @@ echo     ___________
 echo    /           \
 echo   ^|  O     O  ^|
 echo   ^|    ___    ^|   Hi! I'm MAC
-echo   ^|   ^|   ^|   ^|   MBM AI Cloud
+echo   ^|   ^|   ^|   ^|   MBM AI Cloud  v0.0
 echo    \   ---   /
 echo     \_______/
 echo      ^|^| ^|^|
 echo  ===================================================
-echo   MAC — MBM AI Cloud  ^|  Host Server Starting...
+echo   MAC — MBM AI Cloud  ^|  Starting services...
 echo  ===================================================
 echo.
 
-REM Check Docker is running
+REM ── Check Docker is running ──────────────────────────────
 docker info >nul 2>&1
 if errorlevel 1 (
     echo  [ERROR] Docker Desktop is not running.
@@ -25,8 +25,9 @@ if errorlevel 1 (
     pause
     exit /b 1
 )
+echo  [OK] Docker is running.
 
-REM ── Detect the real WiFi/Ethernet LAN IP (skip Docker, WSL, vEthernet) ──
+REM ── Detect the real WiFi/Ethernet LAN IP ─────────────────
 set "LOCAL_IP="
 for /f "usebackq tokens=*" %%i in (`powershell -NoProfile -Command "(Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.InterfaceAlias -notmatch 'Loopback|vEthernet|WSL|Docker|Hyper-V' -and $_.IPAddress -ne '127.0.0.1' -and $_.PrefixOrigin -ne 'WellKnown' } | Sort-Object -Property InterfaceMetric | Select-Object -First 1).IPAddress"`) do (
     set "LOCAL_IP=%%i"
@@ -36,11 +37,10 @@ if not defined LOCAL_IP (
     echo  [WARN] Could not detect WiFi/LAN IP. Using localhost only.
     set "LOCAL_IP=127.0.0.1"
 )
-
-echo  Detected LAN IP: !LOCAL_IP!
+echo  [OK] LAN IP: !LOCAL_IP!
 echo.
 
-REM ── Generate SSL certificates for this LAN IP ──
+REM ── Generate SSL certificates ────────────────────────────
 echo  Generating SSL certificates for !LOCAL_IP!...
 if not exist "nginx\ssl" mkdir "nginx\ssl"
 
@@ -49,87 +49,120 @@ if errorlevel 1 (
     echo  [INFO] Python not found locally, trying via Docker...
     docker run --rm -v "%cd%\nginx\ssl:/ssl" -v "%cd%\mac\services\_gen_ssl_startup.py:/gen.py:ro" python:3.11-slim sh -c "pip install cryptography -q && python /gen.py !LOCAL_IP! /ssl" 2>nul
     if errorlevel 1 (
-        echo  [WARN] SSL generation failed. HTTPS may not work.
-        echo  You can still access MAC over HTTP at http://!LOCAL_IP!
+        echo  [WARN] SSL generation failed. HTTP will still work.
     )
 )
 
 if exist "nginx\ssl\mac.crt" (
-    echo  [OK] SSL certificates ready for !LOCAL_IP!
+    echo  [OK] SSL certificates ready.
 ) else (
-    echo  [WARN] No SSL certificates found. HTTPS will be unavailable.
+    echo  [WARN] No SSL certs. HTTPS unavailable, HTTP will work.
 )
 echo.
 
-REM ── Install CA cert on THIS machine so Chrome trusts our HTTPS ──
+REM ── Install CA cert on this machine ──────────────────────
 if exist "nginx\ssl\ca.crt" (
     echo  Installing CA certificate on this PC...
-    echo  ^(A security dialog may appear — click YES to trust MAC certificates^)
     certutil -user -addstore "Root" "nginx\ssl\ca.crt" >nul 2>&1
     if errorlevel 1 (
-        echo  [INFO] CA cert install skipped or was declined.
-        echo         You can manually install it: double-click nginx\ssl\ca.crt
-        echo         Or visit http://!LOCAL_IP!/install-cert for instructions.
+        echo  [INFO] CA cert install skipped. Double-click nginx\ssl\ca.crt to install manually.
     ) else (
-        echo  [OK] CA certificate trusted on this PC. Restart Chrome if open.
+        echo  [OK] CA certificate trusted. Restart Chrome if already open.
     )
 )
 echo.
 
-REM ── Open firewall ports (requires admin — silent fail if not admin) ──
-echo  Opening firewall ports 80, 443 for LAN access...
-netsh advfirewall firewall add rule name="MAC Web (HTTP)" dir=in action=allow protocol=TCP localport=80 profile=any >nul 2>&1
-netsh advfirewall firewall add rule name="MAC Web (HTTPS)" dir=in action=allow protocol=TCP localport=443 profile=any >nul 2>&1
-netsh advfirewall firewall add rule name="MAC API (8000)" dir=in action=allow protocol=TCP localport=8000 profile=any >nul 2>&1
+REM ── Open firewall ports ───────────────────────────────────
+echo  Opening firewall ports 80, 443, 8000...
+netsh advfirewall firewall add rule name="MAC Web HTTP"  dir=in action=allow protocol=TCP localport=80  profile=any >nul 2>&1
+netsh advfirewall firewall add rule name="MAC Web HTTPS" dir=in action=allow protocol=TCP localport=443 profile=any >nul 2>&1
+netsh advfirewall firewall add rule name="MAC API"       dir=in action=allow protocol=TCP localport=8000 profile=any >nul 2>&1
 echo  [OK] Firewall rules applied.
 echo.
 
-REM ── Detect NVIDIA GPU ──
+REM ── Detect NVIDIA GPU ─────────────────────────────────────
 set "GPU_PROFILE="
-nvidia-smi >nul 2>&1
+set "GPU_NAME=None"
+nvidia-smi --query-gpu=name --format=csv,noheader 2>nul > "%TEMP%\mac_gpu.tmp"
 if not errorlevel 1 (
-    echo  [OK] NVIDIA GPU detected — enabling local AI models.
+    set /p GPU_NAME=<"%TEMP%\mac_gpu.tmp"
+    del "%TEMP%\mac_gpu.tmp" >nul 2>&1
+    echo  [OK] NVIDIA GPU: !GPU_NAME!
+    echo       Enabling vllm-speed for local AI inference.
     set "GPU_PROFILE=--profile gpu"
 ) else (
-    echo  [INFO] No NVIDIA GPU found — running in API-key-only mode.
-    echo         Add your OpenAI/Anthropic key in Settings to use AI chat.
+    del "%TEMP%\mac_gpu.tmp" >nul 2>&1
+    echo  [INFO] No NVIDIA GPU detected — running in API-key mode.
+    echo         Add your OpenAI/Anthropic/Groq key in Settings to use AI chat.
 )
 echo.
 
-REM ── Start services ──
-echo  Starting MAC services (this may take a minute on first run)...
+REM ── Pull latest images (optional — comment out to skip) ───
+REM docker compose pull --quiet
+
+REM ── Start services ────────────────────────────────────────
+echo  Starting MAC services...
+echo  (First run may take 2-3 minutes to download images)
+echo.
 docker compose !GPU_PROFILE! up -d
 
 if errorlevel 1 (
     echo.
     echo  [ERROR] Failed to start MAC services.
+    echo  Check Docker logs: docker compose logs --tail=50
     pause
     exit /b 1
 )
 
-REM ── Force nginx to reload config (picks up new SSL certs + routes) ──
-echo  Reloading nginx configuration...
-docker exec mac-nginx nginx -s reload >nul 2>&1
-echo  [OK] Nginx reloaded.
-
+REM ── Reload nginx to pick up new SSL certs ─────────────────
 echo.
+echo  Reloading nginx...
+docker exec mac-nginx nginx -s reload >nul 2>&1
+echo  [OK] nginx reloaded.
+
+REM ── Show running containers ───────────────────────────────
+echo.
+echo  Running containers:
+docker compose ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}" 2>nul
+echo.
+
+REM ── Access URLs ───────────────────────────────────────────
 echo  ===================================================
 echo   MAC is running!
 echo.
-echo   Local:     http://localhost
-if not "!LOCAL_IP!"=="127.0.0.1" (
-echo   Network:   https://!LOCAL_IP!
-echo   HTTP:      http://!LOCAL_IP!
-echo   Workers:   http://!LOCAL_IP!/join
-echo   Cert:      http://!LOCAL_IP!/install-cert
+echo   APP (HTTPS): https://!LOCAL_IP!
+echo   APP (HTTP):  http://!LOCAL_IP!
+echo   APP (local): http://localhost
+echo.
+echo   API docs:    http://localhost:8000/docs
+echo   Whisper STT: http://localhost:8005
+echo   SearXNG:     http://localhost:8888
+echo   pgAdmin:     http://localhost:5050
+if defined GPU_PROFILE (
+echo   vllm-speed:  http://localhost:8001  (GPU enabled)
 )
+echo.
+echo   Worker join: http://!LOCAL_IP!/join
+echo   CA cert:     http://!LOCAL_IP!/install-cert
 echo  ===================================================
 echo.
-echo  For other devices on this WiFi:
-echo    1. Open  http://!LOCAL_IP!/install-cert  on the device
-echo    2. Download and install the CA certificate ^(one-time^)
-echo    3. Open  https://!LOCAL_IP!  — tap Install!
+
+REM ── Dev credentials hint ──────────────────────────────────
+echo  Dev credentials (change in production!):
+echo    Admin:   abhisek.cse@mbm.ac.in / Admin@1234
+echo    Faculty: raj.cse@mbm.ac.in     / Faculty@1234
+echo    Student: 21CS045               / Student@1234
 echo.
+
+REM ── Veena TTS info ────────────────────────────────────────
+echo  Voice / TTS info:
+echo    Whisper STT is running on :8005
+echo    Veena TTS (Maya Research) can be started manually:
+echo      docker run -p 5002:5002 ghcr.io/mbmuniversity2026/veena-tts:latest
+echo    Or pull it inside the container:
+echo      docker exec -it mac-api pip install veena-tts
+echo.
+
 echo  Press any key to open MAC in your browser...
 pause >nul
 if not "!LOCAL_IP!"=="127.0.0.1" (

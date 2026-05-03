@@ -54,6 +54,10 @@ async function renderAdmin() {
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
         <span>Video Studio</span>
       </div>
+      <div class="admin-tab ${adminTab==='terminal'?'active':''}" data-tab="terminal">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+        <span>Terminal</span>
+      </div>
     </div>
     <div id="admin-content"><div class="loading-state"><div class="spinner"></div><span>Loading...</span></div></div>
   `;
@@ -76,6 +80,7 @@ async function renderAdmin() {
   else if (adminTab === 'features') await renderAdminFeatures();
   else if (adminTab === 'activity') await renderAdminActivityStream();
   else if (adminTab === 'video_studio') await renderVideoStudio();
+  else if (adminTab === 'terminal') await renderAdminTerminal();
 }
 
 async function renderAdminOverview() {

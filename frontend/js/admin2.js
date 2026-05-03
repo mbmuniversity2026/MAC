@@ -492,104 +492,251 @@ async function renderAdminFeatures() {
   }
 }
 
-/* 
-   ADMIN "" Live Activity Stream (SSE)
-    */
+/*
+   ADMIN — Live Activity Stream (IST real-time SSE)
+*/
 let _activityEs = null;
-let _activityLog = [];
 
 async function renderAdminActivityStream() {
   const el = document.getElementById('admin-content');
-  el.innerHTML = `<div class="admin-header">
-    <div><h2>Live Activity</h2><p class="muted" style="margin:0">Real-time audit events streamed from the server.</p></div>
-    <div style="display:flex;align-items:center;gap:10px">
-      <span id="activity-status-dot" class="status-dot offline" title="Disconnected"></span>
-      <span id="activity-status-label" class="muted" style="font-size:.8rem">Connecting"¦</span>
-      <button class="btn btn-sm btn-outline" id="activity-clear-btn">Clear</button>
+  el.innerHTML = `
+    <div class="admin-header">
+      <div><h2>Live Activity</h2><p class="muted" style="margin:0">Real-time platform events — all times in IST</p></div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <span id="act-dot" style="width:8px;height:8px;border-radius:50%;background:var(--muted);display:inline-block;flex-shrink:0"></span>
+        <span id="act-label" class="muted" style="font-size:.8rem">Connecting...</span>
+        <button class="btn btn-sm btn-outline" onclick="document.getElementById('activity-feed').innerHTML=''">Clear</button>
+      </div>
     </div>
-  </div>
-  <div class="activity-feed" id="activity-feed">
-    <div class="loading-state"><div class="spinner"></div><span>Connecting to live stream"¦</span></div>
-  </div>`;
+    <div id="activity-feed" style="display:flex;flex-direction:column;gap:4px;max-height:70vh;overflow-y:auto;padding:4px 0"></div>`;
 
-  document.getElementById('activity-clear-btn').onclick = () => {
-    _activityLog = [];
-    renderActivityFeed();
-  };
-
-  // Disconnect any previous SSE connection
   if (_activityEs) { _activityEs.close(); _activityEs = null; }
 
-  const token = state.token || '';
-  const url = `/api/v1/notifications/activity-stream?token=${encodeURIComponent(token)}`;
-  _activityEs = new EventSource(url);
+  const feed = document.getElementById('activity-feed');
+
+  function _appendEntry(e) {
+    const catColors = { chat:'#22c55e', auth:'#f59e0b', upload:'#3b82f6', download:'#8b5cf6',
+      attendance:'#10b981', quota:'#ef4444', cluster:'#6366f1', copy_check:'#f97316',
+      doubt:'#06b6d4', video:'#ec4899', voice:'#a855f7', system:'#6b7280', default:'#9ca3af' };
+    const color = catColors[e.category] || catColors.default;
+    const div = document.createElement('div');
+    div.style.cssText = 'display:flex;gap:10px;align-items:flex-start;padding:7px 12px;border-radius:8px;background:var(--surface);border:1px solid var(--border);font-size:.82rem;line-height:1.4';
+    div.innerHTML = `
+      <span style="font-size:.95rem;flex-shrink:0;margin-top:1px">${e.icon||'•'}</span>
+      <span style="color:var(--muted);font-size:.72rem;white-space:nowrap;flex-shrink:0;margin-top:2px;min-width:80px">${esc(e.time||'')}</span>
+      <span style="color:var(--text);flex:1">${esc(e.message||'')}</span>
+      <span style="width:6px;height:6px;border-radius:50%;background:${color};flex-shrink:0;margin-top:5px"></span>`;
+    feed.insertBefore(div, feed.firstChild);
+    while (feed.children.length > 300) feed.removeChild(feed.lastChild);
+  }
+
+  const token = encodeURIComponent(state.token || '');
+  _activityEs = new EventSource(`/api/v1/admin/activity/stream?token=${token}`);
 
   _activityEs.onopen = () => {
-    document.getElementById('activity-status-dot')?.classList.replace('offline', 'online');
-    document.getElementById('activity-status-label').textContent = 'Live';
+    const dot = document.getElementById('act-dot');
+    const lbl = document.getElementById('act-label');
+    if (dot) dot.style.background = '#22c55e';
+    if (lbl) lbl.textContent = 'Live';
   };
-
-  _activityEs.addEventListener('connected', (e) => {
-    const feed = document.getElementById('activity-feed');
-    if (feed) feed.innerHTML = '<p class="muted" style="padding:12px;font-size:.8rem">Waiting for activity"¦</p>';
-  });
-
-  _activityEs.addEventListener('activity', (e) => {
-    try {
-      const entry = JSON.parse(e.data);
-      _activityLog.unshift(entry);
-      if (_activityLog.length > 200) _activityLog.pop();
-      renderActivityFeed();
-    } catch {}
-  });
-
-  _activityEs.addEventListener('error', (e) => {
-    try {
-      const entry = JSON.parse(e.data);
-      const feed = document.getElementById('activity-feed');
-      if (feed) feed.innerHTML = `<div class="error-state"><p>${esc(entry.detail || 'Stream error')}</p></div>`;
-    } catch {}
-  });
-
+  _activityEs.onmessage = e => {
+    try { _appendEntry(JSON.parse(e.data)); } catch {}
+  };
   _activityEs.onerror = () => {
-    document.getElementById('activity-status-dot')?.classList.replace('online', 'offline');
-    const labelEl = document.getElementById('activity-status-label');
-    if (labelEl) labelEl.textContent = 'Reconnecting"¦';
+    const dot = document.getElementById('act-dot');
+    const lbl = document.getElementById('act-label');
+    if (dot) dot.style.background = '#ef4444';
+    if (lbl) lbl.textContent = 'Reconnecting...';
   };
 
-  // Cleanup when admin tab changes
-  const tabObserver = new MutationObserver(() => {
+  // Auto-close SSE when tab changes
+  const obs = new MutationObserver(() => {
     if (!document.getElementById('activity-feed')) {
       if (_activityEs) { _activityEs.close(); _activityEs = null; }
-      tabObserver.disconnect();
+      obs.disconnect();
     }
   });
-  const adminContent = document.getElementById('admin-content');
-  if (adminContent) tabObserver.observe(adminContent, { childList: true });
+  const ac = document.getElementById('admin-content');
+  if (ac) obs.observe(ac, { childList: true });
 }
 
-function renderActivityFeed() {
-  const feed = document.getElementById('activity-feed');
-  if (!feed) return;
-  if (_activityLog.length === 0) {
-    feed.innerHTML = '<p class="muted" style="padding:12px;font-size:.8rem">No activity yet.</p>';
+/*
+   ADMIN — Terminal (xterm.js PTY)
+*/
+let _termWs = null;
+let _termInst = null;
+
+async function renderAdminTerminal() {
+  const el = document.getElementById('admin-content');
+  el.innerHTML = `
+    <div class="admin-header" style="flex-wrap:wrap;gap:10px">
+      <div>
+        <h2>⚡ Terminal</h2>
+        <p class="muted" style="margin:0">Full bash access to MAC containers</p>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <select id="term-shell" style="padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:.82rem">
+          <option value="">MAC Backend (bash)</option>
+          <option value="docker:mac-api">Container: mac-api</option>
+          <option value="docker:mac-postgres">Container: mac-postgres</option>
+          <option value="docker:mac-nginx">Container: mac-nginx</option>
+          <option value="docker:mac-redis">Container: mac-redis</option>
+          <option value="docker:mac-whisper">Container: mac-whisper</option>
+          <option value="docker:mac-searxng">Container: mac-searxng</option>
+          <option value="docker:mac-qdrant">Container: mac-qdrant</option>
+        </select>
+        <button class="btn btn-sm btn-primary" id="term-connect" style="width:auto;padding:6px 16px">Connect</button>
+        <button class="btn btn-sm btn-danger-outline" id="term-disconnect" style="display:none;width:auto;padding:6px 14px">Disconnect</button>
+        <span id="term-status" class="muted" style="font-size:.75rem">Disconnected</span>
+      </div>
+    </div>
+    <div id="term-wrap" style="background:#1e1e1e;border-radius:10px;border:1px solid var(--border);overflow:hidden;height:calc(100vh - 195px);min-height:380px;position:relative">
+      <div id="term-placeholder" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px;color:#555;font-size:.85rem">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#444" stroke-width="1.5"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+        <span>Click Connect to open a terminal session</span>
+      </div>
+      <div id="term-xterm" style="height:100%;width:100%;display:none"></div>
+    </div>`;
+
+  document.getElementById('term-connect').onclick = _termConnect;
+  document.getElementById('term-disconnect').onclick = _termDisconnect;
+
+  // Cleanup on tab navigation
+  const obs = new MutationObserver(() => {
+    if (!document.getElementById('term-wrap')) { _termDisconnect(); obs.disconnect(); }
+  });
+  const ac = document.getElementById('admin-content');
+  if (ac) obs.observe(ac, { childList: true });
+}
+
+async function _termLoadLibs() {
+  if (window.Terminal) return true;
+  const CDN = 'https://cdn.jsdelivr.net/npm';
+  try {
+    await Promise.all([
+      _dynStyle(`${CDN}/xterm@5.3.0/css/xterm.css`),
+      _dynScript(`${CDN}/xterm@5.3.0/lib/xterm.min.js`),
+    ]);
+    await _dynScript(`${CDN}/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js`);
+    return !!window.Terminal;
+  } catch { return false; }
+}
+function _dynScript(src) {
+  return new Promise((res, rej) => {
+    if (document.querySelector(`script[src="${src}"]`)) { res(); return; }
+    const s = document.createElement('script'); s.src = src;
+    s.onload = res; s.onerror = rej;
+    document.head.appendChild(s);
+  });
+}
+function _dynStyle(href) {
+  if (!document.querySelector(`link[href="${href}"]`)) {
+    const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = href;
+    document.head.appendChild(l);
+  }
+  return Promise.resolve();
+}
+
+async function _termConnect() {
+  const statusEl = document.getElementById('term-status');
+  const shellSel = document.getElementById('term-shell');
+  if (statusEl) statusEl.textContent = 'Loading xterm.js...';
+
+  const ok = await _termLoadLibs();
+  if (!ok) {
+    if (statusEl) statusEl.textContent = 'xterm.js load failed (need internet)';
+    showToast('xterm.js unavailable — check internet connection', 'error');
     return;
   }
-  const actionCssVar = {
-    'copy_check': 'var(--color-copy-check)', 'auth': 'var(--color-auth)',
-    'admin': 'var(--color-admin)', 'query': 'var(--color-query)', 'system': 'var(--muted)',
+
+  _termDisconnect();
+
+  const shell = shellSel ? shellSel.value : '';
+  const xtermEl = document.getElementById('term-xterm');
+  const placeholder = document.getElementById('term-placeholder');
+
+  _termInst = new Terminal({
+    cursorBlink: true, fontSize: 13,
+    fontFamily: 'Consolas, "Courier New", monospace',
+    theme: {
+      background: '#1e1e1e', foreground: '#d4d4d4', cursor: '#d4d4d4',
+      black: '#1e1e1e', red: '#f44747', green: '#6a9955', yellow: '#dcdcaa',
+      blue: '#569cd6', magenta: '#c586c0', cyan: '#4ec9b0', white: '#d4d4d4',
+      brightBlack: '#808080', brightRed: '#f44747', brightGreen: '#89d185',
+      brightYellow: '#dcdcaa', brightBlue: '#569cd6', brightMagenta: '#c586c0',
+      brightCyan: '#4ec9b0', brightWhite: '#ffffff',
+    },
+    scrollback: 5000,
+  });
+
+  const fitAddon = new FitAddon.FitAddon();
+  _termInst.loadAddon(fitAddon);
+
+  if (placeholder) placeholder.style.display = 'none';
+  if (xtermEl) xtermEl.style.display = 'block';
+  _termInst.open(xtermEl);
+
+  try { fitAddon.fit(); } catch {}
+
+  const ro = new ResizeObserver(() => { try { fitAddon.fit(); } catch {} });
+  if (xtermEl) ro.observe(xtermEl);
+
+  // WebSocket
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const tokenParam = encodeURIComponent(state.token || '');
+  const shellParam = shell ? `&shell=${encodeURIComponent(shell)}` : '';
+  const wsUrl = `${proto}//${location.host}/api/v1/admin/terminal/ws?token=${tokenParam}${shellParam}`;
+
+  _termWs = new WebSocket(wsUrl);
+  _termWs.binaryType = 'arraybuffer';
+
+  _termWs.onopen = () => {
+    if (statusEl) statusEl.textContent = 'Connected';
+    document.getElementById('term-connect').style.display = 'none';
+    document.getElementById('term-disconnect').style.display = '';
+    const { cols, rows } = _termInst;
+    _termWs.send(JSON.stringify({ type: 'resize', cols, rows }));
   };
-  feed.innerHTML = _activityLog.map(entry => {
-    const catKey = (entry.action || '').split('.')[0];
-    const color = actionCssVar[catKey] || 'var(--muted)';
-    return `<div class="activity-entry">
-      <span class="activity-dot" style="background:${color}"></span>
-      <div class="activity-body">
-        <span class="activity-action">${esc(entry.action || '')}</span>
-        <span class="activity-meta muted">${esc(entry.actor_role || '')} &middot; ${esc(entry.resource_type || '')}</span>
-        ${entry.details ? `<span class="activity-details muted">${esc((entry.details || '').slice(0, 120))}</span>` : ''}
-      </div>
-      <span class="activity-time muted">${entry.created_at ? timeAgo(entry.created_at) : ''}</span>
-    </div>`;
-  }).join('');
+  _termWs.onmessage = e => {
+    if (e.data instanceof ArrayBuffer) {
+      _termInst.write(new Uint8Array(e.data));
+    } else {
+      _termInst.write(e.data);
+    }
+  };
+  _termWs.onclose = () => {
+    if (statusEl) statusEl.textContent = 'Disconnected';
+    document.getElementById('term-connect').style.display = '';
+    document.getElementById('term-disconnect').style.display = 'none';
+    _termWs = null;
+  };
+  _termWs.onerror = () => {
+    if (statusEl) statusEl.textContent = 'Error';
+    showToast('Terminal connection error', 'error');
+  };
+
+  _termInst.onData(data => {
+    if (_termWs && _termWs.readyState === WebSocket.OPEN) _termWs.send(data);
+  });
+  _termInst.onResize(({ cols, rows }) => {
+    if (_termWs && _termWs.readyState === WebSocket.OPEN)
+      _termWs.send(JSON.stringify({ type: 'resize', cols, rows }));
+  });
+}
+
+function _termDisconnect() {
+  if (_termWs) { try { _termWs.close(); } catch {} _termWs = null; }
+  if (_termInst) { try { _termInst.dispose(); } catch {} _termInst = null; }
+  const placeholder = document.getElementById('term-placeholder');
+  const xtermEl = document.getElementById('term-xterm');
+  const statusEl = document.getElementById('term-status');
+  if (placeholder) { placeholder.style.display = ''; placeholder.innerHTML = `
+    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#444" stroke-width="1.5"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+    <span>Click Connect to open a terminal session</span>`; }
+  if (xtermEl) xtermEl.style.display = 'none';
+  if (statusEl) statusEl.textContent = 'Disconnected';
+  const cb = document.getElementById('term-connect');
+  const db = document.getElementById('term-disconnect');
+  if (cb) cb.style.display = '';
+  if (db) db.style.display = 'none';
 }

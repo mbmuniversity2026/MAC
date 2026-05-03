@@ -157,6 +157,8 @@ async function renderDashboard() {
         </div>
         <div id="models-grid" class="models-grid"><div class="muted">Loading...</div></div>
       </div>
+
+      <div id="role-sections"></div>
     `;
 
     // Render heatmap
@@ -243,7 +245,196 @@ async function renderDashboard() {
       `).join('') || '<p class="muted">No models configured</p>';
     } catch { document.getElementById('models-grid').innerHTML = '<p class="muted">Could not load models</p>'; }
 
+    // Role-specific sections (async, non-blocking)
+    _loadRoleDashboard(me.role, me).catch(() => {});
+
   } catch (ex) { el.innerHTML = `<div class="error-state"><p>Error: ${esc(ex.message)}</p><button class="btn btn-sm btn-outline" onclick="renderDashboard()">Retry</button></div>`; }
+}
+
+async function _loadRoleDashboard(role, me) {
+  const sec = document.getElementById('role-sections');
+  if (!sec) return;
+
+  if (role === 'student') {
+    // Fetch student-specific data in parallel
+    const [attData, ccData, doubtsData, notebooksCount] = await Promise.allSettled([
+      apiJson('/attendance/my-records?per_page=30'),
+      apiJson('/copy-check/my-results?per_page=10'),
+      apiJson('/doubts?per_page=5'),
+      apiJson('/notebooks/list').catch(() => ({ notebooks: [] })),
+    ]);
+
+    const att = attData.status === 'fulfilled' ? attData.value : null;
+    const cc  = ccData.status === 'fulfilled'  ? ccData.value  : null;
+    const dbt = doubtsData.status === 'fulfilled' ? doubtsData.value : null;
+    const nb  = notebooksCount.status === 'fulfilled' ? notebooksCount.value : null;
+
+    // Attendance %
+    const sessions = att?.records || att?.sessions || [];
+    const present  = sessions.filter(s => s.status === 'present').length;
+    const attPct   = sessions.length > 0 ? Math.round((present / sessions.length) * 100) : null;
+
+    // Copy check avg
+    const ccResults = cc?.results || cc?.checks || [];
+    const ccAvg = ccResults.length > 0
+      ? Math.round(ccResults.reduce((s, r) => s + (r.similarity_score || r.score || 0), 0) / ccResults.length * 100)
+      : null;
+
+    // Doubts
+    const doubtsList = dbt?.doubts || [];
+    const nbList = nb?.notebooks || [];
+
+    sec.innerHTML = `
+      <div class="stats-grid stats-4" style="margin-top:16px">
+        <div class="stat-card ${attPct !== null && attPct < 75 ? 'border-danger' : ''}">
+          <div class="stat-icon" style="color:${attPct !== null && attPct < 75 ? 'var(--danger)' : 'var(--success,#22c55e)'}">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><polyline points="16 11 18 13 22 9"/></svg>
+          </div>
+          <div class="stat-body">
+            <div class="label">Attendance</div>
+            <div class="value">${attPct !== null ? attPct + '%' : '--'}</div>
+            <div class="sub">${present} / ${sessions.length} sessions${attPct !== null && attPct < 75 ? ' ⚠ Low' : ''}</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></div>
+          <div class="stat-body">
+            <div class="label">Copy Check Avg</div>
+            <div class="value">${ccAvg !== null ? ccAvg + '%' : '--'}</div>
+            <div class="sub">${ccResults.length} submissions checked</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+          <div class="stat-body">
+            <div class="label">My Doubts</div>
+            <div class="value">${dbt ? (dbt.total || doubtsList.length) : '--'}</div>
+            <div class="sub">${doubtsList.filter(d => d.status === 'open').length} open</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg></div>
+          <div class="stat-body">
+            <div class="label">Notebooks</div>
+            <div class="value">${nbList.length || '--'}</div>
+            <div class="sub">in MBM Book</div>
+          </div>
+        </div>
+      </div>
+      ${doubtsList.length > 0 ? `
+      <div class="chart-card" style="margin-top:16px">
+        <div class="chart-header"><h3>Recent Doubts</h3></div>
+        <div class="table-responsive">
+        <table class="data-table">
+          <thead><tr><th>Question</th><th>Status</th><th>Replies</th><th>Asked</th></tr></thead>
+          <tbody>
+            ${doubtsList.slice(0, 5).map(d => `
+              <tr>
+                <td style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(d.title||d.question||'')}">
+                  ${esc((d.title || d.question || '').slice(0, 60))}
+                </td>
+                <td><span class="badge badge-${d.status==='resolved'?'success':d.status==='open'?'warn':'neutral'}">${esc(d.status||'open')}</span></td>
+                <td>${d.replies_count || d.answer_count || 0}</td>
+                <td class="muted">${timeAgo(d.created_at)}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+        </div>
+      </div>` : ''}`;
+
+  } else if (role === 'faculty') {
+    const [sessData, ccSessData, pendingDts] = await Promise.allSettled([
+      apiJson('/attendance/sessions?per_page=8'),
+      apiJson('/copy-check/sessions?per_page=8'),
+      apiJson('/doubts?status=open&per_page=8'),
+    ]);
+
+    const sessions  = sessData.status  === 'fulfilled' ? (sessData.value.sessions  || sessData.value  || []) : [];
+    const ccSessions = ccSessData.status === 'fulfilled' ? (ccSessData.value.sessions || ccSessData.value || []) : [];
+    const pending   = pendingDts.status === 'fulfilled' ? (pendingDts.value.doubts || []) : [];
+
+    sec.innerHTML = `
+      <div class="stats-grid stats-3" style="margin-top:16px">
+        <div class="stat-card">
+          <div class="stat-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></div>
+          <div class="stat-body">
+            <div class="label">Attendance Sessions</div>
+            <div class="value">${sessions.length}</div>
+            <div class="sub">${sessions.filter(s=>s.is_open).length} open now</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div>
+          <div class="stat-body">
+            <div class="label">Copy Check Sessions</div>
+            <div class="value">${ccSessions.length}</div>
+            <div class="sub">${ccSessions.filter(s=>s.is_active).length} active</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg></div>
+          <div class="stat-body">
+            <div class="label">Pending Doubts</div>
+            <div class="value">${pending.length}</div>
+            <div class="sub">awaiting answer</div>
+          </div>
+        </div>
+      </div>
+      ${pending.length > 0 ? `
+      <div class="chart-card" style="margin-top:16px">
+        <div class="chart-header"><h3>Open Doubts — Needs Your Answer</h3></div>
+        <div class="table-responsive">
+        <table class="data-table">
+          <thead><tr><th>Question</th><th>Student</th><th>Asked</th></tr></thead>
+          <tbody>
+            ${pending.slice(0, 6).map(d => `
+              <tr>
+                <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc((d.title||d.question||'').slice(0,70))}</td>
+                <td class="muted">${esc(d.author_name || d.roll_number || '--')}</td>
+                <td class="muted">${timeAgo(d.created_at)}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+        </div>
+      </div>` : ''}`;
+
+  } else if (role === 'admin') {
+    // Admin gets a quick cluster + top users summary
+    const [clusterData, topUsersData] = await Promise.allSettled([
+      apiJson('/cluster/nodes').catch(() => []),
+      apiJson('/usage/admin/all?per_page=5'),
+    ]);
+    const nodes = clusterData.status === 'fulfilled' ? (Array.isArray(clusterData.value) ? clusterData.value : (clusterData.value.nodes||[])) : [];
+    const topUsers = topUsersData.status === 'fulfilled' ? (topUsersData.value.users||[]).slice(0,5) : [];
+
+    sec.innerHTML = `
+      <div class="stats-grid stats-3" style="margin-top:16px">
+        <div class="stat-card">
+          <div class="stat-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg></div>
+          <div class="stat-body">
+            <div class="label">Cluster Nodes</div>
+            <div class="value">${nodes.length}</div>
+            <div class="sub">${nodes.filter(n=>n.status==='active'&&n.healthy).length} healthy · ${nodes.filter(n=>n.status==='pending').length} pending</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
+          <div class="stat-body">
+            <div class="label">Live Activity</div>
+            <div class="value" style="font-size:1rem"><span class="dot-success"></span> Streaming</div>
+            <div class="sub"><a href="#" onclick="navigate('admin');return false" style="color:var(--accent)">Open Admin Panel →</a></div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div>
+          <div class="stat-body">
+            <div class="label">Top User Today</div>
+            <div class="value" style="font-size:1rem">${topUsers[0] ? esc(topUsers[0].name?.split(' ')[0] || 'N/A') : '--'}</div>
+            <div class="sub">${topUsers[0] ? fmtNum(topUsers[0].tokens_today||0) + ' tokens' : 'No usage yet'}</div>
+          </div>
+        </div>
+      </div>`;
+  }
 }
 
 /* 
