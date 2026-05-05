@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MAC — MBM AI Cloud Installer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Floating watermark words background (matching auth.js physics) -->
+  <div class="wm-layer" id="wm-layer" aria-hidden="true"></div>
+  <!-- Accent orbs -->
+  <div class="orb orb-1"></div>
+  <div class="orb orb-2"></div>
+
+  <div class="installer">
+    <!-- Side stepper -->
+    <aside class="stepper" id="stepper">
+      <div class="brand">
+        <img src="assets/logo.png" alt="MAC" class="brand-logo-img" width="72" height="72">
+        <div class="brand-sub">Mugneeram Bangur Memorial<br>University — AI Cloud</div>
+      </div>
+      <div class="steps">
+        <div class="step active" data-step="0">
+          <span class="step-num">1</span>
+          <span class="step-label">Welcome</span>
+        </div>
+        <div class="step" data-step="1">
+          <span class="step-num">2</span>
+          <span class="step-label">Role Selection</span>
+        </div>
+        <div class="step" data-step="2">
+          <span class="step-num">3</span>
+          <span class="step-label">Hardware Scan</span>
+        </div>
+        <div class="step" data-step="3">
+          <span class="step-num">4</span>
+          <span class="step-label">Models</span>
+        </div>
+        <div class="step" data-step="4">
+          <span class="step-num">5</span>
+          <span class="step-label">Configure</span>
+        </div>
+        <div class="step" data-step="5">
+          <span class="step-num">6</span>
+          <span class="step-label">Install</span>
+        </div>
+      </div>
+      <div class="stepper-footer">
+        <div class="version">MAC v1.0.0</div>
+        <div class="university">Cross the Limits</div>
+      </div>
+    </aside>
+
+    <!-- Main content -->
+    <main class="content" id="content">
+
+      <!-- Page 0: Welcome -->
+      <section class="page active" id="page-0">
+        <div class="welcome-hero">
+          <div class="mascot-wrap">
+            <svg class="mac-mascot" width="80" height="80" viewBox="0 0 64 64" fill="none">
+              <defs><radialGradient id="mg" cx="50%" cy="40%" r="55%"><stop offset="0%" stop-color="#d4834a" stop-opacity=".15"/><stop offset="100%" stop-color="#d4834a" stop-opacity="0"/></radialGradient><filter id="ms"><feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#d4834a" flood-opacity=".25"/></filter></defs>
+              <g filter="url(#ms)"><ellipse cx="32" cy="56" rx="14" ry="3" fill="#d4834a" opacity=".12"/>
+              <path d="M32 8c-12 0-20 8.5-20 19 0 6 2.5 11 6.5 14.5 1.5 1.3 2.5 3.2 2.5 5.5v1c0 2.2 1.8 4 4 4h14c2.2 0 4-1.8 4-4v-1c0-2.3 1-4.2 2.5-5.5C49.5 38 52 33 52 27c0-10.5-8-19-20-19z" fill="#d4834a"/><path d="M32 8c-12 0-20 8.5-20 19 0 6 2.5 11 6.5 14.5 1.5 1.3 2.5 3.2 2.5 5.5v1c0 2.2 1.8 4 4 4h14c2.2 0 4-1.8 4-4v-1c0-2.3 1-4.2 2.5-5.5C49.5 38 52 33 52 27c0-10.5-8-19-20-19z" fill="url(#mg)"/>
+              <rect x="25" y="50" width="14" height="3" rx="1.5" fill="#d4834a" opacity=".6"/><rect x="27" y="54" width="10" height="2" rx="1" fill="#d4834a" opacity=".4"/>
+              <circle cx="24" cy="27" r="5.5" fill="#fff"/><circle cx="40" cy="27" r="5.5" fill="#fff"/>
+              <circle cx="24" cy="27.8" r="3" fill="#1a1a2e"/><circle cx="40" cy="27.8" r="3" fill="#1a1a2e"/>
+              <circle cx="23" cy="26" r="1.2" fill="#fff" opacity=".9"/><circle cx="39" cy="26" r="1.2" fill="#fff" opacity=".9"/>
+              <ellipse cx="32" cy="35" rx="3" ry="1.8" fill="#fff" opacity=".85"/>
+              <path d="M26 10c1.5-3 3.5-4.5 6-4.5s4.5 1.5 6 4.5" stroke="#d4834a" stroke-width="1.5" stroke-linecap="round" opacity=".3"/><circle cx="32" cy="5" r="2" fill="#d4834a" opacity=".5"/></g>
+            </svg>
+          </div>
+          <h1>Welcome to <span class="accent">MAC</span></h1>
+          <p class="tagline">MBM AI Cloud — Cross the Limits</p>
+          <p class="welcome-desc">
+            This installer will set up MAC on your PC. You'll configure it as a <strong>Host</strong> (full admin server with database, API, AI models) or a <strong>Worker</strong> (GPU compute node contributing to the cluster).
+          </p>
+          <div class="welcome-cards">
+            <div class="welcome-card host">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#d4834a" stroke-width="1.5"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><circle cx="6" cy="6" r="1"/><circle cx="6" cy="18" r="1"/></svg>
+              <div class="wc-title">HOST</div>
+              <div class="wc-desc">Full platform — Nginx, PostgreSQL, Redis, API, AI models</div>
+            </div>
+            <div class="welcome-card worker">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="1.5"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+              <div class="wc-title">WORKER</div>
+              <div class="wc-desc">GPU compute node — connects to Host over WiFi</div>
+            </div>
+          </div>
+          <div class="requirements">
+            <h3>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+              Requirements
+            </h3>
+            <ul>
+              <li>Docker Desktop (auto-installed if missing)</li>
+              <li>NVIDIA GPU with drivers installed</li>
+              <li>8 GB RAM minimum · 16 GB recommended</li>
+              <li>WiFi/LAN connection between all nodes</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- Page 1: Role Selection -->
+      <section class="page" id="page-1">
+        <h2>Choose Your Role</h2>
+        <p class="page-sub">How will this PC participate in the MAC network?</p>
+        <div class="role-cards">
+          <div class="role-card selected" id="role-host" onclick="selectRole('host')">
+            <div class="role-icon">
+              <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="#d4834a" stroke-width="1.5"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><circle cx="6" cy="6" r="1"/><circle cx="6" cy="18" r="1"/><line x1="10" y1="6" x2="18" y2="6"/><line x1="10" y1="18" x2="18" y2="18"/></svg>
+            </div>
+            <h3>HOST <span class="badge">Admin Server</span></h3>
+            <p>Runs the complete MAC platform. All workers connect to this machine.</p>
+            <ul class="role-features">
+              <li>PostgreSQL database + Redis cache</li>
+              <li>Nginx reverse proxy + SSL</li>
+              <li>FastAPI backend + Web UI</li>
+              <li>Load balancer for worker GPUs</li>
+              <li>Admin dashboard + model management</li>
+            </ul>
+            <div class="role-check"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
+          </div>
+          <div class="role-card" id="role-worker" onclick="selectRole('worker')">
+            <div class="role-icon">
+              <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="1.5"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/><path d="M7 10h2m2 0h2m2 0h2"/></svg>
+            </div>
+            <h3>WORKER <span class="badge blue">GPU Node</span></h3>
+            <p>Contributes GPU compute to an existing Host. Requires Host IP.</p>
+            <ul class="role-features">
+              <li>vLLM inference engine on GPU</li>
+              <li>Auto-registers with Host server</li>
+              <li>Heartbeat monitoring</li>
+              <li>Model auto-assigned by admin</li>
+            </ul>
+            <div class="role-check"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
+          </div>
+        </div>
+        <!-- Worker: Host IP input -->
+        <div class="host-ip-row" id="host-ip-row" style="display:none">
+          <label>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
+            Host IP Address
+          </label>
+          <input type="text" id="host-ip-input" placeholder="e.g. 192.168.1.100" spellcheck="false">
+          <span class="ip-hint">The IP address of the Host PC running the MAC server</span>
+        </div>
+      </section>
+
+      <!-- Page 2: Hardware Scan -->
+      <section class="page" id="page-2">
+        <h2>Hardware Scan</h2>
+        <p class="page-sub">Detecting your system capabilities</p>
+        <div class="hw-scanning" id="hw-scanning">
+          <div class="scan-anim"><div class="scan-ring"></div><div class="scan-ring r2"></div><div class="scan-ring r3"></div></div>
+          <p>Scanning hardware...</p>
+        </div>
+        <div class="hw-results" id="hw-results" style="display:none">
+          <div class="hw-grid">
+            <div class="hw-card"><div class="hw-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><line x1="9" y1="9" x2="9" y2="15"/><line x1="15" y1="9" x2="15" y2="15"/><line x1="9" y1="12" x2="15" y2="12"/></svg></div><div class="hw-label">CPU</div><div class="hw-value" id="hw-cpu">—</div></div>
+            <div class="hw-card"><div class="hw-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4m0 14v4M4.22 4.22l2.83 2.83m9.9 9.9l2.83 2.83M1 12h4m14 0h4M4.22 19.78l2.83-2.83m9.9-9.9l2.83-2.83"/></svg></div><div class="hw-label">Cores</div><div class="hw-value" id="hw-cores">—</div></div>
+            <div class="hw-card accent"><div class="hw-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#d4834a" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></div><div class="hw-label">GPU</div><div class="hw-value" id="hw-gpu">—</div></div>
+            <div class="hw-card accent"><div class="hw-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#d4834a" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"/><line x1="6" y1="10" x2="6" y2="14"/><line x1="10" y1="10" x2="10" y2="14"/><line x1="14" y1="10" x2="14" y2="14"/><line x1="18" y1="10" x2="18" y2="14"/></svg></div><div class="hw-label">VRAM</div><div class="hw-value" id="hw-vram">—</div></div>
+            <div class="hw-card"><div class="hw-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"/><line x1="6" y1="10" x2="18" y2="10"/><line x1="6" y1="14" x2="14" y2="14"/></svg></div><div class="hw-label">RAM</div><div class="hw-value" id="hw-ram">—</div></div>
+            <div class="hw-card"><div class="hw-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12.55a11 11 0 0 1 14.08 0M1.42 9a16 16 0 0 1 21.16 0"/><circle cx="12" cy="18" r="1"/></svg></div><div class="hw-label">Network IP</div><div class="hw-value" id="hw-ip">—</div></div>
+            <div class="hw-card"><div class="hw-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></div><div class="hw-label">OS</div><div class="hw-value" id="hw-os">—</div></div>
+            <div class="hw-card" id="docker-card"><div class="hw-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></div><div class="hw-label">Docker</div><div class="hw-value" id="hw-docker">—</div></div>
+            <div class="hw-card"><div class="hw-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div><div class="hw-label">NVIDIA Driver</div><div class="hw-value" id="hw-driver">—</div></div>
+          </div>
+          <div class="hw-actions" id="docker-actions" style="display:none">
+            <div class="hw-warning">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              <span>Docker Desktop is required. Click below to install automatically.</span>
+            </div>
+            <button class="btn btn-accent" id="install-docker-btn" onclick="installDocker()">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Install Docker Desktop
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Page 3: Model Selection -->
+      <section class="page" id="page-3">
+        <h2>AI Model Selection</h2>
+        <p class="page-sub" id="model-sub">Choose which specialist models to download (~4-8 GB each)</p>
+        <div class="model-table" id="model-table"></div>
+        <div class="model-summary" id="model-summary"></div>
+      </section>
+
+      <!-- Page 4: Configure -->
+      <section class="page" id="page-4">
+        <h2>Configuration</h2>
+        <p class="page-sub">Review your setup before installation</p>
+        <div class="config-review" id="config-review"></div>
+      </section>
+
+      <!-- Page 5: Install -->
+      <section class="page" id="page-5">
+        <h2>Installing MAC</h2>
+        <p class="page-sub">Setting up your AI infrastructure...</p>
+        <div class="install-progress">
+          <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+          <div class="progress-pct" id="progress-pct">0%</div>
+        </div>
+        <div class="install-steps" id="install-steps"></div>
+        <div class="install-done" id="install-done" style="display:none">
+          <div class="done-icon"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
+          <h2>Installation Complete!</h2>
+          <p>MAC is ready. Launch the platform to access your AI cloud.</p>
+          <button class="btn btn-accent" onclick="launchMAC()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            Launch MAC
+          </button>
+        </div>
+      </section>
+    </main>
+
+    <!-- Bottom nav -->
+    <footer class="nav-bar" id="nav-bar">
+      <button class="btn btn-ghost" id="btn-back" onclick="prevStep()" style="visibility:hidden">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+        Back
+      </button>
+      <div class="nav-dots" id="nav-dots">
+        <span class="dot active"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span>
+      </div>
+      <button class="btn btn-accent" id="btn-next" onclick="nextStep()">
+        Get Started
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+      </button>
+    </footer>
+  </div>
+  <script src="main.js"></script>
+</body>
+</html>

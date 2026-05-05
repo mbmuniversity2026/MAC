@@ -1,65 +1,65 @@
 async function renderAdmin() {
   const el = document.getElementById('page-content');
   if (!state.user || state.user.role !== 'admin') {
-    el.innerHTML = '<div class="error-state"><p>Admin access required.</p></div>';
+    el.innerHTML = `<div class="error-state"><p>${t('adminAccessRequired')}</p></div>`;
     return;
   }
   el.innerHTML = `
     <div class="admin-tabs" id="admin-tabs">
       <div class="admin-tab ${adminTab==='overview'?'active':''}" data-tab="overview">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg>
-        <span>Overview</span>
+        <span>${t('overview')}</span>
       </div>
       <div class="admin-tab ${adminTab==='users'?'active':''}" data-tab="users">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-        <span>Users</span>
+        <span>${t('users')}</span>
       </div>
       <div class="admin-tab ${adminTab==='keys'?'active':''}" data-tab="keys">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
-        <span>API Keys</span>
+        <span>${t('apiKeys')}</span>
       </div>
       <div class="admin-tab ${adminTab==='models'?'active':''}" data-tab="models">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-        <span>Models</span>
+        <span>${t('models')}</span>
       </div>
       <div class="admin-tab ${adminTab==='registry'?'active':''}" data-tab="registry">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-        <span>Registry</span>
+        <span>${t('registry')}</span>
       </div>
       <div class="admin-tab ${adminTab==='cluster'?'active':''}" data-tab="cluster">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
-        <span>Cluster</span>
+        <span>${t('cluster')}</span>
       </div>
       <div class="admin-tab ${adminTab==='scoped_keys'?'active':''}" data-tab="scoped_keys">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
-        <span>Scoped Keys</span>
+        <span>${t('scopedKeys')}</span>
       </div>
       <div class="admin-tab ${adminTab==='audit'?'active':''}" data-tab="audit">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg>
-        <span>Audit Log</span>
+        <span>${t('auditLog')}</span>
       </div>
       <div class="admin-tab ${adminTab==='guardrails'?'active':''}" data-tab="guardrails">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="12" y1="9" x2="12" y2="15"/></svg>
-        <span>Guardrails</span>
+        <span>${t('guardrails')}</span>
       </div>
       <div class="admin-tab ${adminTab==='features'?'active':''}" data-tab="features">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-        <span>Features</span>
+        <span>${t('features')}</span>
       </div>
       <div class="admin-tab ${adminTab==='activity'?'active':''}" data-tab="activity">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-        <span>Live Activity</span>
+        <span>${t('liveActivity')}</span>
       </div>
       <div class="admin-tab ${adminTab==='video_studio'?'active':''}" data-tab="video_studio">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
-        <span>Video Studio</span>
+        <span>${t('videoStudio')}</span>
       </div>
       <div class="admin-tab ${adminTab==='terminal'?'active':''}" data-tab="terminal">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
-        <span>Terminal</span>
+        <span>${t('terminal')}</span>
       </div>
     </div>
-    <div id="admin-content"><div class="loading-state"><div class="spinner"></div><span>Loading...</span></div></div>
+    <div id="admin-content"><div class="loading-state"><div class="spinner"></div><span>${t('loading')}</span></div></div>
   `;
   document.querySelectorAll('#admin-tabs .admin-tab').forEach(t => {
     t.onclick = () => { adminTab = t.dataset.tab; localStorage.setItem('mac_admin_tab', adminTab); renderAdmin(); };
@@ -107,7 +107,7 @@ async function renderAdminOverview() {
         <div class="stat-card accent">
           <div class="stat-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
           <div class="stat-body">
-            <div class="label">Total Users</div>
+            <div class="label">${t('totalUsers')}</div>
             <div class="value">${stats.total_users}</div>
             <div class="sub">${stats.active_users} active &middot; ${stats.admin_count} admins</div>
           </div>
@@ -115,17 +115,17 @@ async function renderAdminOverview() {
         <div class="stat-card">
           <div class="stat-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div>
           <div class="stat-body">
-            <div class="label">Requests Today</div>
+            <div class="label">${t('requestsToday')}</div>
             <div class="value">${fmtNum(stats.requests_today)}</div>
-            <div class="sub">across all users</div>
+            <div class="sub">${t('acrossAllUsers')}</div>
           </div>
         </div>
         <div class="stat-card">
           <div class="stat-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83"/></svg></div>
           <div class="stat-body">
-            <div class="label">Tokens Today</div>
+            <div class="label">${t('tokensToday')}</div>
             <div class="value">${fmtNum(stats.tokens_today)}</div>
-            <div class="sub">total consumed</div>
+            <div class="sub">${t('totalConsumed')}</div>
           </div>
         </div>
       </div>
@@ -133,8 +133,8 @@ async function renderAdminOverview() {
       <div class="charts-row">
         <div class="chart-card flex-1">
           <div class="chart-header">
-            <h3>Model Performance</h3>
-            <span class="chart-sub">Today's stats per model</span>
+            <h3>${t('modelPerformance')}</h3>
+            <span class="chart-sub">${t('todaysStats')}</span>
           </div>
           ${models.length > 0 ? `
           <div class="table-responsive">
@@ -157,7 +157,7 @@ async function renderAdminOverview() {
         </div>
         <div class="chart-card flex-1">
           <div class="chart-header">
-            <h3>Department Distribution</h3>
+            <h3>${t('deptDistribution')}</h3>
           </div>
           <div style="height:220px"><canvas id="admin-dept-chart"></canvas></div>
         </div>

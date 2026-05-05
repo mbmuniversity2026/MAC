@@ -131,8 +131,8 @@ function renderChat() {
     <div class="chat-layout">
       <div class="chat-sessions" id="chat-sidebar">
         <div class="chat-sessions-header">
-          <h3>Sessions</h3>
-          <button class="btn btn-sm btn-outline" id="new-chat-btn">+ New</button>
+          <h3>${t('sessions')}</h3>
+          <button class="btn btn-sm btn-outline" id="new-chat-btn">+ ${t('newChat')}</button>
         </div>
         <div class="session-list" id="session-list">
           ${sessions.map(s => sessionItem(s)).join('')}
@@ -145,7 +145,7 @@ function renderChat() {
         </div>
         <div class="chat-input-wrap">
           <div class="chat-input-box">
-            <textarea id="chat-input" placeholder="Message MAC..." rows="1"></textarea>
+            <textarea id="chat-input" placeholder="${t('messageMAC')}" rows="1"></textarea>
             <div class="chat-input-actions">
               <div class="chat-input-left">
                 <select id="model-select" class="model-pill"><option value="auto" selected>Auto</option></select>
@@ -447,7 +447,7 @@ async function sendMessage() {
   startMacThinking(assistantDiv);
 
   const status = document.getElementById('chat-status');
-  status.textContent = 'Generating...';
+  status.textContent = t('generating');
   isStreaming = true;
 
   try {
@@ -576,7 +576,7 @@ async function sendAgentMessage(query) {
   startMacThinking(assistantDiv);
 
   const status = document.getElementById('chat-status');
-  status.textContent = 'Agent working...';
+  status.textContent = t('agentWorking');
   isStreaming = true;
 
   try {
@@ -716,11 +716,11 @@ function _voiceSetState(state, msg) {
   }
   const labels = {
     connecting: 'Connecting...',
-    listening: 'Listening — speak now',
-    processing: 'Thinking...',
-    speaking: 'MAC is speaking...',
-    error: 'Connection error',
-    disconnected: 'Disconnected',
+    listening: t('listening'),
+    processing: t('thinking') + '...',
+    speaking: t('macSpeaking'),
+    error: t('connError'),
+    disconnected: t('disconnected'),
   };
   const el = document.getElementById('mac-voice-status');
   if (el) {

@@ -53,3 +53,17 @@ qdrant_storage/
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Tauri / Rust build artifacts
+mac-installer/src-tauri/target/
+mac-installer/node_modules/
+mac-installer/.vscode/
+
+# Node
+node_modules/
+
+# Models cache (downloaded at runtime)
+models/
+*.bin
+*.safetensors
+*.gguf

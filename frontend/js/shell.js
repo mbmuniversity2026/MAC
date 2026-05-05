@@ -3,7 +3,7 @@ function shell() {
   const isAdmin = u.role === 'admin';
   const isFacultyOrAdmin = u.role === 'faculty' || u.role === 'admin';
   const isStudent = u.role === 'student';
-  const pages = { dashboard: 'Dashboard', chat: 'Chat', notebooks: 'MBM Book', doubts: 'Doubts', attendance: 'Attendance', copycheck: 'Copy Check', fileshare: 'Shared Files', settings: 'Settings', admin: 'Admin' };
+  const pages = { dashboard: t('dashboard'), chat: t('chat'), notebooks: t('notebooks'), doubts: t('doubts'), attendance: t('attendance'), copycheck: t('copycheck'), fileshare: t('fileshare'), settings: t('settings'), admin: t('admin') };
   const dockSide = localStorage.getItem('mac_dock_side') || 'left';
   const savedW = localStorage.getItem('mac_sidebar_width');
   const savedH = localStorage.getItem('mac_sidebar_height');
@@ -48,7 +48,7 @@ function shell() {
           </a>
           ${isFacultyOrAdmin || isStudent ? `<a href="#copycheck" data-page="copycheck" class="${state.page==='copycheck'?'active':''}">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 15l2 2 4-4"/></svg>
-            <span>${isStudent ? 'My Results' : t('copycheck')}</span>
+            <span>${isStudent ? t('myResults') : t('copycheck')}</span>
           </a>` : ''}
           <a href="#fileshare" data-page="fileshare" class="${state.page==='fileshare'?'active':''}">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
@@ -72,7 +72,7 @@ function shell() {
         </div>
         <button class="btn btn-sm btn-outline sidebar-logout" onclick="showAbout()" style="margin-bottom:4px;color:var(--muted);font-size:.75rem;border-color:var(--border)">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-          <span>About MAC</span>
+          <span>${t('aboutMAC')}</span>
         </button>
         <button class="btn btn-sm btn-outline sidebar-logout" onclick="logout()">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
@@ -83,26 +83,26 @@ function shell() {
     <div class="main-content">
       ${state.updateAvail ? `<div class="update-banner" id="update-banner">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/></svg>
-        MAC ${esc(state.updateAvail.version)} is available.
-        <a href="${esc(state.updateAvail.url)}" target="_blank" rel="noopener" style="font-weight:700;text-decoration:underline;margin-left:4px">View release</a>
+        MAC ${esc(state.updateAvail.version)} ${t('isAvailable')}.
+        <a href="${esc(state.updateAvail.url)}" target="_blank" rel="noopener" style="font-weight:700;text-decoration:underline;margin-left:4px">${t('viewRelease')}</a>
         <button onclick="document.getElementById('update-banner').remove()" style="margin-left:8px;opacity:.7;font-size:1rem;line-height:1">&times;</button>
       </div>` : ''}
       <div class="topbar">
         <button class="btn btn-sm menu-btn" id="menu-toggle">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
         </button>
-        <h1>${pages[state.page] || 'Dashboard'}</h1>
+        <h1>${pages[state.page] || t('dashboard')}</h1>
         <div class="topbar-right">
           <button class="btn btn-sm pwa-install-btn" id="pwa-install-btn" style="display:${deferredInstallPrompt?'':'none'}" onclick="installPWA()" title="Install MAC App">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            <span>Install</span>
+            <span>${t('install')}</span>
           </button>
           <div class="notif-bell" id="notif-bell" title="Notifications">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
             <span class="notif-badge" id="notif-count"></span>
           </div>
           <span class="status-dot"></span>
-          <span style="font-size:.75rem;color:var(--muted)">Online</span>
+          <span style="font-size:.75rem;color:var(--muted)">${t('online')}</span>
         </div>
       </div>
       <div class="page" id="page-content"></div>
@@ -110,11 +110,11 @@ function shell() {
   </div>
   <div class="notif-panel" id="notif-panel">
     <div class="notif-panel-header">
-      <h3>Notifications</h3>
-      <button class="btn btn-sm btn-outline" id="notif-mark-all" style="padding:4px 10px;font-size:.72rem">Mark all read</button>
+      <h3>${t('notifications')}</h3>
+      <button class="btn btn-sm btn-outline" id="notif-mark-all" style="padding:4px 10px;font-size:.72rem">${t('markAllRead')}</button>
     </div>
     <div class="notif-list" id="notif-list">
-      <div class="notif-empty">No notifications</div>
+      <div class="notif-empty">${t('noNotifications')}</div>
     </div>
   </div>`;
 }

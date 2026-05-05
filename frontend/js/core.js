@@ -131,7 +131,7 @@ function macThinkingHTML() {
         <span class="mac-tl" style="--i:2">C</span>
       </div>
     </div>
-    <span class="mac-think-label">Thinking</span>
+    <span class="mac-think-label">${t('thinking')}</span>
   </div>`;
 }
 function startMacThinking(el) {

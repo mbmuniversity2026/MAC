@@ -1,6 +1,6 @@
 async function renderDashboard() {
   const el = document.getElementById('page-content');
-  el.innerHTML = '<div class="loading-state"><div class="spinner"></div><span>Loading dashboard...</span></div>';
+  el.innerHTML = `<div class="loading-state"><div class="spinner"></div><span>${t('loadingDashboard')}</span></div>`;
   try {
     const [me, quota, history, keyStats] = await Promise.all([
       apiJson('/auth/me'),
@@ -30,11 +30,11 @@ async function renderDashboard() {
     el.innerHTML = `
       <div class="dash-greeting">
         <div>
-          <h2>Welcome back, ${esc(me.name.split(' ')[0])}</h2>
-          <p>${esc(me.department)} &middot; ${esc(me.role)} &middot; Joined ${new Date(me.created_at).toLocaleDateString('en-IN', {month:'short',year:'numeric'})}</p>
+          <h2>${t('welcomeBack')}, ${esc(me.name.split(' ')[0])}</h2>
+          <p>${esc(me.department)} &middot; ${esc(me.role)} &middot; ${t('joined')} ${new Date(me.created_at).toLocaleDateString('en-IN', {month:'short',year:'numeric'})}</p>
         </div>
         <div class="dash-greeting-api">
-          <span class="label">API Key</span>
+          <span class="label">${t('apiKey')}</span>
           <code class="api-key-mini">${esc(me.api_key ? me.api_key.slice(0,8) + '...' + me.api_key.slice(-4) : 'N/A')}</code>
         </div>
       </div>
@@ -43,7 +43,7 @@ async function renderDashboard() {
         <div class="stat-card">
           <div class="stat-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
           <div class="stat-body">
-            <div class="label">Tokens Today</div>
+            <div class="label">${t('tokensToday')}</div>
             <div class="value">${fmtNum(tokensUsed)}</div>
             <div class="stat-bar"><div class="stat-bar-fill ${tokenPct > 80 ? 'warn' : ''}" style="width:${tokenPct}%"></div></div>
             <div class="sub">${tokenPct}% of ${fmtNum(tokensLimit)}</div>
@@ -52,7 +52,7 @@ async function renderDashboard() {
         <div class="stat-card">
           <div class="stat-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
           <div class="stat-body">
-            <div class="label">Requests / Hour</div>
+            <div class="label">${t('requestsPerHour')}</div>
             <div class="value">${reqsUsed}</div>
             <div class="stat-bar"><div class="stat-bar-fill ${reqPct > 80 ? 'warn' : ''}" style="width:${reqPct}%"></div></div>
             <div class="sub">${reqPct}% of ${reqsLimit}</div>
@@ -61,17 +61,17 @@ async function renderDashboard() {
         <div class="stat-card">
           <div class="stat-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></div>
           <div class="stat-body">
-            <div class="label">This Week</div>
+            <div class="label">${t('thisWeek')}</div>
             <div class="value">${fmtNum(keyStats?.tokens_this_week || 0)}</div>
-            <div class="sub">tokens consumed</div>
+            <div class="sub">${t('tokensConsumed')}</div>
           </div>
         </div>
         <div class="stat-card">
           <div class="stat-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
           <div class="stat-body">
-            <div class="label">Chat Sessions</div>
+            <div class="label">${t('chatSessions')}</div>
             <div class="value">${getSessions().length}</div>
-            <div class="sub">saved locally</div>
+            <div class="sub">${t('savedLocally')}</div>
           </div>
         </div>
       </div>
@@ -79,19 +79,19 @@ async function renderDashboard() {
       <div class="charts-row">
         <div class="chart-card flex-2">
           <div class="chart-header">
-            <h3>Activity Heatmap</h3>
-            <span class="chart-sub">Your usage pattern over recent days</span>
+            <h3>${t('activityHeatmap')}</h3>
+            <span class="chart-sub">${t('usagePattern')}</span>
           </div>
           <div class="heatmap-container" id="heatmap-container"></div>
         </div>
         <div class="chart-card flex-1">
           <div class="chart-header">
-            <h3>Model Usage</h3>
-            <span class="chart-sub">Distribution by model</span>
+            <h3>${t('modelUsage')}</h3>
+            <span class="chart-sub">${t('distributionByModel')}</span>
           </div>
           <div class="chart-wrap-sm" style="position:relative">
             <canvas id="chart-models"></canvas>
-            ${Object.keys(modelDist).length === 0 ? '<div class="chart-empty"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#bbb" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 0 1 10 10"/><line x1="12" y1="12" x2="12" y2="8"/><line x1="12" y1="12" x2="16" y2="12"/></svg><p>No model usage yet</p><span>Start a chat to see distribution</span></div>' : ''}
+            ${Object.keys(modelDist).length === 0 ? `<div class="chart-empty"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#bbb" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 0 1 10 10"/><line x1="12" y1="12" x2="12" y2="8"/><line x1="12" y1="12" x2="16" y2="12"/></svg><p>${t('noModelUsage')}</p><span>${t('startChatToSee')}</span></div>` : ''}
           </div>
           <div id="model-legend" class="chart-legend"></div>
         </div>
@@ -100,26 +100,26 @@ async function renderDashboard() {
       <div class="charts-row">
         <div class="chart-card flex-1">
           <div class="chart-header">
-            <h3>Hourly Activity</h3>
-            <span class="chart-sub">When you use MAC most</span>
+            <h3>${t('hourlyActivity')}</h3>
+            <span class="chart-sub">${t('whenYouUseMAC')}</span>
           </div>
           <div style="height:200px;position:relative">
             <canvas id="chart-hourly"></canvas>
-            ${hourlyDist.every(v => v === 0) ? '<div class="chart-empty"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#bbb" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="3" x2="9" y2="21"/></svg><p>No activity recorded yet</p><span>Use the chat "" your hourly pattern will appear here</span></div>' : ''}
+            ${hourlyDist.every(v => v === 0) ? `<div class="chart-empty"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#bbb" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="3" x2="9" y2="21"/></svg><p>${t('noActivityYet')}</p><span>${t('useTheChatHourly')}</span></div>` : ''}
           </div>
         </div>
         <div class="chart-card flex-1">
           <div class="chart-header">
-            <h3>Quota Overview</h3>
+            <h3>${t('quotaOverview')}</h3>
           </div>
           <div class="quota-rings">
             <div class="ring-wrap">
               <canvas id="chart-tokens" width="160" height="160"></canvas>
-              <div class="ring-label"><span class="pct">${tokenPct}%</span><span class="lbl">Tokens</span><span class="ring-used">${fmtNum(tokensUsed)}</span></div>
+              <div class="ring-label"><span class="pct">${tokenPct}%</span><span class="lbl">${t('tokens')}</span><span class="ring-used">${fmtNum(tokensUsed)}</span></div>
             </div>
             <div class="ring-wrap">
               <canvas id="chart-reqs" width="160" height="160"></canvas>
-              <div class="ring-label"><span class="pct">${reqPct}%</span><span class="lbl">Requests</span><span class="ring-used">${reqsUsed}</span></div>
+              <div class="ring-label"><span class="pct">${reqPct}%</span><span class="lbl">${t('requests')}</span><span class="ring-used">${reqsUsed}</span></div>
             </div>
           </div>
         </div>
@@ -127,13 +127,13 @@ async function renderDashboard() {
 
       <div class="chart-card">
         <div class="chart-header">
-          <h3>Recent Activity</h3>
-          <span class="chart-sub">${reqs.length} recent requests</span>
+          <h3>${t('recentActivity')}</h3>
+          <span class="chart-sub">${reqs.length} ${t('recentRequests')}</span>
         </div>
         ${reqs.length > 0 ? `
           <div class="table-responsive">
           <table class="data-table">
-            <thead><tr><th>Model</th><th>Endpoint</th><th>Tokens</th><th>Latency</th><th>Status</th><th>Time</th></tr></thead>
+            <thead><tr><th>${t('model')}</th><th>${t('endpoint')}</th><th>${t('tokens')}</th><th>${t('latency')}</th><th>${t('status')}</th><th>${t('time')}</th></tr></thead>
             <tbody>
               ${reqs.slice(0,15).map(r => `
                 <tr>
@@ -148,14 +148,14 @@ async function renderDashboard() {
             </tbody>
           </table>
           </div>
-        ` : '<div class="empty-state"><p>No activity yet. Start a chat or make an API call!</p></div>'}
+        ` : `<div class="empty-state"><p>${t('noActivityStart')}</p></div>`}
       </div>
 
       <div class="chart-card">
         <div class="chart-header">
-          <h3>Available Models</h3>
+          <h3>${t('availableModels')}</h3>
         </div>
-        <div id="models-grid" class="models-grid"><div class="muted">Loading...</div></div>
+        <div id="models-grid" class="models-grid"><div class="muted">${t('loading')}</div></div>
       </div>
 
       <div id="role-sections"></div>

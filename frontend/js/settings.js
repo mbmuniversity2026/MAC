@@ -4,26 +4,26 @@ async function renderSettings() {
   el.innerHTML = `
     <div class="settings-cards">
       <div class="settings-card">
-        <h3><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>Profile Information</h3>
-        <div class="field"><label>Roll Number</label><input value="${esc(u.roll_number)}" disabled></div>
-        <div class="field"><label>Name</label><input id="pf-name" value="${esc(u.name)}"></div>
-        <div class="field"><label>Email</label><input id="pf-email" type="email" value="${esc(u.email || '')}" placeholder="Optional"></div>
-        <div class="field"><label>Department</label><input id="pf-dept" value="${esc(u.department)}" ${u.role === 'admin' ? '' : 'disabled'}></div>
-        <div class="field"><label>Role</label><input value="${esc(u.role)}" disabled></div>
+        <h3><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>${t('profileInfo')}</h3>
+        <div class="field"><label>${t('rollNumber')}</label><input value="${esc(u.roll_number)}" disabled></div>
+        <div class="field"><label>${t('name')}</label><input id="pf-name" value="${esc(u.name)}"></div>
+        <div class="field"><label>${t('email')}</label><input id="pf-email" type="email" value="${esc(u.email || '')}" placeholder="${t('email')}"></div>
+        <div class="field"><label>${t('department')}</label><input id="pf-dept" value="${esc(u.department)}" ${u.role === 'admin' ? '' : 'disabled'}></div>
+        <div class="field"><label>${t('role')}</label><input value="${esc(u.role)}" disabled></div>
         <div id="pf-msg" style="font-size:.85rem;min-height:20px;margin-bottom:8px"></div>
-        <button class="btn btn-primary" id="save-profile-btn" style="width:auto;padding:8px 24px">Save Profile</button>
+        <button class="btn btn-primary" id="save-profile-btn" style="width:auto;padding:8px 24px">${t('saveProfile')}</button>
       </div>
       <div class="settings-card">
-        <h3><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>Change Password</h3>
-        ${pwField('cp-old', 'Current Password', 'Current password')}
-        ${pwField('cp-new', 'New Password', 'Min 8 characters')}
-        ${pwField('cp-confirm', 'Confirm New Password', 'Repeat password')}
+        <h3><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>${t('changePass')}</h3>
+        ${pwField('cp-old', t('currentPassword'), t('currentPassword'))}
+        ${pwField('cp-new', t('newPassword'), t('min8Chars'))}
+        ${pwField('cp-confirm', t('confirmNewPw'), t('confirmPwPh'))}
         <div id="cp-msg" style="font-size:.85rem;min-height:20px;margin-bottom:8px"></div>
-        <button class="btn btn-primary" id="change-pw-btn" style="width:auto;padding:8px 24px">Update Password</button>
+        <button class="btn btn-primary" id="change-pw-btn" style="width:auto;padding:8px 24px">${t('updatePassword')}</button>
       </div>
       <div class="settings-card">
         <h3><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>${t('langLabel')}</h3>
-        <p style="font-size:.85rem;color:var(--muted);margin-bottom:14px">Choose your preferred language for the interface.</p>
+        <p style="font-size:.85rem;color:var(--muted);margin-bottom:14px">${t('chooseLang')}</p>
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px" id="lang-card-btns">
           ${window.MAC_I18N.LOCALES.map(l => `
           <button onclick="setLang('${l.code}')" style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border:2px solid ${window.MAC_I18N.getLang()===l.code?'var(--accent)':'var(--border)'};border-radius:10px;background:${window.MAC_I18N.getLang()===l.code?'var(--accent-light)':'var(--card)'};color:${window.MAC_I18N.getLang()===l.code?'var(--accent)':'var(--fg)'};cursor:pointer;font-family:inherit;font-size:.9rem;transition:all .15s">
@@ -33,8 +33,8 @@ async function renderSettings() {
         </div>
       </div>
       <div class="settings-card">
-        <h3><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px"><circle cx="12" cy="12" r="10"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>Theme</h3>
-        <p style="font-size:.85rem;color:var(--muted);margin-bottom:12px">Choose a color theme for the entire interface.</p>
+        <h3><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px"><circle cx="12" cy="12" r="10"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>${t('theme')}</h3>
+        <p style="font-size:.85rem;color:var(--muted);margin-bottom:12px">${t('chooseTheme')}</p>
         <div class="theme-picker" id="theme-picker">
           <div class="theme-dot" data-theme="warm" title="Warm (Default)"></div>
           <div class="theme-dot" data-theme="moonstone" title="Moonstone"></div>
@@ -52,15 +52,15 @@ async function renderSettings() {
         </div>
       </div>
       <div class="settings-card">
-        <h3><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>API Key</h3>
-        <p style="font-size:.85rem;color:var(--muted);margin-bottom:12px">Use this key in your projects to call MAC APIs from anywhere.</p>
+        <h3><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>${t('apiKey')}</h3>
+        <p style="font-size:.85rem;color:var(--muted);margin-bottom:12px">${t('apiKeyDesc')}</p>
         <div class="api-key-box">
           <code id="api-key-display">${esc(u.api_key || 'N/A')}</code>
-          <button class="btn btn-sm btn-outline copy-btn" onclick="navigator.clipboard.writeText(document.getElementById('api-key-display').textContent).then(()=>{this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)})">Copy</button>
+          <button class="btn btn-sm btn-outline copy-btn" onclick="navigator.clipboard.writeText(document.getElementById('api-key-display').textContent).then(()=>{this.textContent='${t('copied')}';setTimeout(()=>this.textContent='${t('copy')}',1500)})">${t('copy')}</button>
         </div>
         <div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <button class="btn btn-sm btn-danger-outline" id="regen-my-key">Regenerate Key</button>
-          <button class="btn btn-sm btn-outline" id="test-key-btn">Test Key</button>
+          <button class="btn btn-sm btn-danger-outline" id="regen-my-key">${t('regenerateKey')}</button>
+          <button class="btn btn-sm btn-outline" id="test-key-btn">${t('testKey')}</button>
           <span id="key-test-msg" style="font-size:.85rem"></span>
         </div>
       </div>
@@ -99,9 +99,9 @@ async function renderSettings() {
     const oldPw = document.getElementById('cp-old').value;
     const newPw = document.getElementById('cp-new').value;
     const confPw = document.getElementById('cp-confirm').value;
-    if (!oldPw || !newPw) { msg.innerHTML = '<span style="color:var(--danger)">All fields required</span>'; return; }
-    if (newPw.length < 8) { msg.innerHTML = '<span style="color:var(--danger)">Min 8 characters</span>'; return; }
-    if (newPw !== confPw) { msg.innerHTML = '<span style="color:var(--danger)">Passwords do not match</span>'; return; }
+     if (!oldPw || !newPw) { msg.innerHTML = `<span style="color:var(--danger)">${t('allFieldsRequired')}</span>`; return; }
+     if (newPw.length < 8) { msg.innerHTML = `<span style="color:var(--danger)">${t('min8Chars')}</span>`; return; }
+     if (newPw !== confPw) { msg.innerHTML = `<span style="color:var(--danger)">${t('pwNoMatch')}</span>`; return; }
     try {
       const r = await api('/auth/change-password', {
         method: 'POST',
