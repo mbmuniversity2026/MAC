@@ -80,6 +80,16 @@
             '<input id="join-name" type="text" class="fl-input" placeholder=" " autocomplete="off">' +
           '</div>' +
         '</div>' +
+        '<div style="margin-bottom:14px">' +
+          '<label style="font-size:.8rem;font-weight:600;color:var(--muted);display:block;margin-bottom:6px">Model to host on this PC</label>' +
+          '<select id="join-model" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:.85rem">' +
+            '<option value="sarvamai/sarvam-2b-v0.5">Sarvam-2B — Hindi/English bilingual (2.5B, ~4 GB VRAM)</option>' +
+            '<option value="Qwen/Qwen2.5-7B-Instruct-AWQ">Qwen2.5-7B AWQ — Fast general chat (7B, ~5 GB VRAM)</option>' +
+            '<option value="Qwen/Qwen2.5-Coder-7B-Instruct-AWQ">Qwen2.5-Coder-7B — Code generation (7B, ~5 GB VRAM)</option>' +
+            '<option value="deepseek-ai/DeepSeek-R1-Distill-Qwen-7B">DeepSeek-R1 7B — Reasoning/Math (7B, ~6 GB VRAM)</option>' +
+            '<option value="Qwen/Qwen2.5-7B-Instruct">Qwen2.5-7B (full precision, 24 GB+ GPU)</option>' +
+          '</select>' +
+        '</div>' +
         '<button type="button" class="sign-btn" id="join-submit">' + SVG_LINK + '<span>Join Cluster</span></button>' +
       '</div>' +
       '<div id="join-status" class="join-status-wrap">' +
@@ -102,6 +112,10 @@
     _bindFl('fl-join-token', 'join-token');
     _bindFl('fl-join-name', 'join-name');
 
+    /* Pre-fill IP from URL param ?master=192.168.x.x */
+    var params = new URLSearchParams(location.search);
+    if (params.get('master')) document.getElementById('join-ip').value = params.get('master');
+
     /* Retry button */
     var retryBtn = document.getElementById('join-retry');
     if (retryBtn) retryBtn.onclick = function() {
@@ -116,7 +130,7 @@
     if (btn) btn.onclick = handleJoin;
   }
 
-  /* ── SHA-256 helper ── */
+  /* ── SHA-256 helper (for heartbeat node_token) ── */
   async function sha256(str) {
     var buf = new TextEncoder().encode(str);
     var hash = await crypto.subtle.digest('SHA-256', buf);
@@ -128,6 +142,7 @@
     var ip    = document.getElementById('join-ip').value.trim();
     var token = document.getElementById('join-token').value.trim();
     var name  = document.getElementById('join-name').value.trim() || location.hostname || 'Worker';
+    var model = document.getElementById('join-model').value;
     var errBox = document.getElementById('join-error-box');
     var errMsg = document.getElementById('join-error-msg');
 
@@ -137,7 +152,7 @@
       _shakeCard();
     }
 
-    if (!ip) { showErr('Please enter the admin server IP'); return; }
+    if (!ip)    { showErr('Please enter the admin server IP'); return; }
     if (!token) { showErr('Please enter the enrollment token'); return; }
     if (errBox) errBox.style.display = 'none';
 
@@ -151,6 +166,9 @@
     var subEl    = document.getElementById('join-status-sub');
     var retryBtn = document.getElementById('join-retry');
 
+    /* token_hash = sha256(enrollment_token) — used for heartbeat auth */
+    var tokenHash = await sha256(token);
+
     /* Spinner */
     iconEl.innerHTML = '<div class="spinner" style="width:48px;height:48px;border-width:3px;margin:0 auto"></div>';
     textEl.textContent = 'Connecting to admin server...';
@@ -158,79 +176,94 @@
 
     try {
       var baseUrl = 'http://' + ip + (ip.includes(':') ? '' : ':80');
-      var tokenHash = await sha256(token);
 
-      /* Register */
+      /* ── REGISTER — uses correct RegisterRequest schema ── */
       var resp = await fetch(baseUrl + '/api/v1/cluster/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          hostname: name,
-          ip: location.hostname,
-          token_hash: tokenHash,
-          gpu_info: { name: 'Browser Registration', vram_mb: 0 },
-          cpu_cores: navigator.hardwareConcurrency || 0,
-          ram_mb: 0,
-          tags: ['browser-enrolled']
+          enrollment_token: token,               // ← plain token (not hash)
+          name:             name,
+          hostname:         location.hostname,
+          ip_address:       location.hostname,   // ← correct field name
+          port:             8001,
+          gpu_name:         'Browser Registration',
+          gpu_vram_mb:      0,
+          ram_total_mb:     0,
+          cpu_cores:        navigator.hardwareConcurrency || 0,
+          tags:             'browser-enrolled'
         })
       });
 
       if (!resp.ok) {
         var errData = {};
         try { errData = await resp.json(); } catch(e) {}
-        throw new Error(errData.detail || 'Registration failed (HTTP ' + resp.status + ')');
+        var detail = errData.detail || {};
+        throw new Error((typeof detail === 'object' ? detail.message : detail) || 'Registration failed (HTTP ' + resp.status + ')');
       }
 
       var data = await resp.json();
+      var nodeId = data.node_id;
 
       if (data.status === 'pending') {
         iconEl.innerHTML = '<div style="font-size:3rem">⏳</div>';
         textEl.textContent = 'Waiting for Admin Approval';
         textEl.className = 'join-pending';
-        subEl.textContent = 'Node ID: ' + data.node_id + ' — admin needs to approve in Cluster panel';
+        subEl.innerHTML = 'Node ID: <code>' + esc(nodeId) + '</code><br>Ask admin to approve in <b>Admin → Cluster</b>.';
 
-        /* Poll for approval */
+        /* Poll heartbeat until approved */
         var attempts = 0;
         var pollInterval = setInterval(async function() {
           attempts++;
           try {
+            /* ── HEARTBEAT — uses correct HeartbeatRequest schema ── */
             var hbResp = await fetch(baseUrl + '/api/v1/cluster/heartbeat', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ node_id: data.node_id, token_hash: tokenHash, metrics: {} })
+              body: JSON.stringify({
+                node_id:    nodeId,
+                node_token: tokenHash,   // ← sha256(enrollment_token), correct field
+                active_models: [model],
+                queue_depth:   0
+              })
             });
             if (hbResp.ok) {
               clearInterval(pollInterval);
               iconEl.innerHTML = '<div style="font-size:3rem">✅</div>';
               textEl.textContent = 'Approved & Connected!';
               textEl.className = 'join-success';
-              subEl.textContent = 'Node ID: ' + data.node_id + '. Now set up the worker agent on this PC to start contributing GPU resources.';
+              subEl.innerHTML =
+                'Node ID: <code>' + esc(nodeId) + '</code><br>' +
+                'Now run <b>start-mac-worker.bat</b> on this PC to start vLLM with:<br>' +
+                '<code style="font-size:.75rem">' + esc(model) + '</code>';
               retryBtn.style.display = '';
               retryBtn.textContent = 'Done';
               retryBtn.onclick = function() { location.href = '/'; };
             } else if (hbResp.status === 403) {
-              subEl.textContent = 'Still waiting for admin approval... (' + (attempts * 5) + 's)';
+              subEl.innerHTML = 'Still waiting for admin approval… (' + (attempts * 5) + 's elapsed)';
             }
           } catch(e) {
-            subEl.textContent = 'Polling... (' + (attempts * 5) + 's)';
+            subEl.textContent = 'Polling… (' + (attempts * 5) + 's)';
           }
           if (attempts > 120) {
             clearInterval(pollInterval);
-            subEl.textContent = 'Timeout. Ask admin to approve your node in the Cluster panel.';
+            subEl.textContent = 'Timed out. Ask admin to approve your node in Cluster panel.';
             retryBtn.style.display = '';
           }
         }, 5000);
+
       } else {
         iconEl.innerHTML = '<div style="font-size:3rem">✅</div>';
         textEl.textContent = 'Connected!';
         textEl.className = 'join-success';
-        subEl.textContent = 'Node ID: ' + data.node_id + '. Status: ' + data.status;
+        subEl.innerHTML = 'Node ID: <code>' + esc(nodeId) + '</code> · Status: ' + esc(data.status) + '<br>Run <b>start-mac-worker.bat</b> to begin serving.';
       }
+
     } catch (err) {
       iconEl.innerHTML = '<div style="font-size:3rem">❌</div>';
       textEl.textContent = 'Connection Failed';
       textEl.className = 'join-fail';
-      subEl.textContent = err.message || 'Could not reach the admin server. Check the IP address.';
+      subEl.textContent = err.message || 'Could not reach the admin server. Check the IP and make sure MAC is running.';
       retryBtn.style.display = '';
     }
   }

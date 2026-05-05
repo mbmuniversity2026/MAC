@@ -1,10 +1,14 @@
 # ═══════════════════════════════════════════════════════════
-#  MAC — MBM AI Cloud  |  Local Server Setup (12GB GPU)
+#  MAC — MBM AI Cloud  |  Host Server  (RTX 3060 12 GB)
 # ═══════════════════════════════════════════════════════════
-#  RTX 3060 12GB VRAM — single model at a time strategy.
-#  GPU: Qwen2.5-7B chat/code      ~ 5GB (gpu_memory_utilization=0.45)
-#  CPU: Whisper STT + Piper TTS   ~ 1.5GB RAM (no VRAM)
-#  Infra: PostgreSQL + Redis + Nginx + Qdrant + SearXNG
+#  GPU budget (12 GB):
+#    Sarvam-2B  (voice / chat LLM)  ≈ 4 GB   — always-on
+#    Veena TTS  (3B, 4-bit)         ≈ 2 GB   — always-on
+#    Whisper STT (CPU)              ≈ 0 GB VRAM
+#    Headroom / OS                  ≈ 6 GB   ✓
+#
+#  Start:   start-mac.bat   (auto-detects GPU → adds --profile gpu)
+#  Stop:    stop-mac.bat
 # ═══════════════════════════════════════════════════════════
 
 services:
@@ -29,7 +33,8 @@ services:
       - EMBEDDING_URL=http://vllm-speed:8001
       - QDRANT_URL=http://qdrant:6333
       - SEARXNG_URL=http://searxng:8080
-      - MAC_ENABLED_MODELS=qwen2.5:7b,whisper-small,tts-piper
+      - MAC_ENABLED_MODELS=sarvam:2b,qwen2.5:7b,whisper-small,veena-tts
+      - MAC_AUTO_FALLBACK=sarvam:2b
     depends_on:
       postgres:
         condition: service_healthy
@@ -42,7 +47,6 @@ services:
       retries: 3
       start_period: 30s
     volumes:
-      # Persistent uploads stored on host PC — organized by type
       - ./data/uploads/copy_check:/app/uploads/copy_check
       - ./data/uploads/rag:/app/uploads/rag
       - ./data/uploads/attendance:/app/uploads/attendance
@@ -58,12 +62,10 @@ services:
       - mac-net
 
   # ═══════════════════════════════════════════════════════
-  #  vLLM GPU INFERENCE — Single model for 12GB GPU
+  #  vLLM — Sarvam-2B  (bilingual Hindi/English voice LLM)
   # ═══════════════════════════════════════════════════════
-
-  # ── Speed Model: Qwen2.5-7B (handles ALL chat/code/general) ──
-  # Requires NVIDIA GPU. Start with: docker compose --profile gpu up -d
-  # Without GPU, MAC works in API-key-only mode (OpenAI/Anthropic keys).
+  # Start with: docker compose --profile gpu up -d
+  # Without GPU: MAC runs in API-key-only mode.
   vllm-speed:
     image: vllm/vllm-openai:latest
     container_name: mac-vllm-speed
@@ -75,12 +77,14 @@ services:
     volumes:
       - hf-cache:/root/.cache/huggingface
     command: >
-      --model ${VLLM_SPEED_MODEL:-Qwen/Qwen2.5-7B-Instruct-AWQ}
+      --model ${VLLM_SPEED_MODEL:-sarvamai/sarvam-2b-v0.5}
       --port ${VLLM_SPEED_PORT:-8001}
-      --gpu-memory-utilization 0.85
-      --max-model-len 8192
+      --gpu-memory-utilization 0.55
+      --max-model-len 4096
       --trust-remote-code
       --enforce-eager
+      --dtype auto
+      --served-model-name sarvamai/sarvam-2b-v0.5
     deploy:
       resources:
         reservations:
@@ -97,20 +101,11 @@ services:
     networks:
       - mac-net
 
-  # ── Code/Reasoning/Intelligence models DISABLED (12GB GPU) ──
-  # Uncomment when upgrading to 24GB+ GPU
-  # vllm-code:
-  #   ...
-  # vllm-reason:
-  #   ...
-  # vllm-intel:
-  #   ...
-
   # ═══════════════════════════════════════════════════════
-  #  SPEECH & AUDIO SERVICES (CPU — saves GPU for LLM)
+  #  SPEECH SERVICES
   # ═══════════════════════════════════════════════════════
 
-  # ── Whisper — Speech-to-Text (CPU mode) ────────────────
+  # ── Whisper STT (CPU — saves GPU for LLM + TTS) ────────
   whisper:
     image: fedirz/faster-whisper-server:latest-cpu
     container_name: mac-whisper
@@ -128,24 +123,42 @@ services:
     networks:
       - mac-net
 
-  # ── Piper TTS — Text-to-Speech (CPU, lightweight) ─────
-  # TEMPORARILY DISABLED — image still downloading on slow WiFi
-  # tts:
-  #   image: ghcr.io/matatonic/openedai-speech:latest
-  #   container_name: mac-tts
-  #   ports:
-  #     - "${TTS_PORT:-8006}:8000"
-  #   volumes:
-  #     - tts-voices:/app/voices
-  #   restart: unless-stopped
-  #   networks:
-  #     - mac-net
+  # ── Veena TTS — Hindi/English neural voice (maya-research/Veena) ──
+  # Builds locally from ./veena_tts/. Downloads model weights on first run.
+  # With GPU: 4-bit, ~2 GB VRAM.  Without GPU: CPU inference (slower).
+  tts:
+    build: ./veena_tts
+    container_name: mac-tts
+    ports:
+      - "${TTS_PORT:-8006}:8000"
+    environment:
+      - HF_HOME=/root/.cache/huggingface
+      - VEENA_MODEL=${VEENA_MODEL:-maya-research/Veena}
+      - VEENA_DEVICE=${VEENA_DEVICE:-auto}
+      - TRANSFORMERS_OFFLINE=${TRANSFORMERS_OFFLINE:-0}
+      - HF_DATASETS_OFFLINE=${HF_DATASETS_OFFLINE:-0}
+    volumes:
+      - hf-cache:/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    restart: unless-stopped
+    networks:
+      - mac-net
 
   # ═══════════════════════════════════════════════════════
-  #  INFRASTRUCTURE SERVICES
+  #  INFRASTRUCTURE
   # ═══════════════════════════════════════════════════════
 
-  # ── PostgreSQL — Persistent data store ─────────────────
   postgres:
     image: postgres:16-alpine
     container_name: mac-postgres
@@ -171,7 +184,6 @@ services:
     networks:
       - mac-net
 
-  # ── pgAdmin — PostgreSQL admin UI (local-only by default) ──
   pgadmin:
     image: dpage/pgadmin4:8
     container_name: mac-pgadmin
@@ -190,7 +202,6 @@ services:
     networks:
       - mac-net
 
-  # ── Redis — Rate limiting & caching ────────────────────
   redis:
     image: redis:7-alpine
     container_name: mac-redis
@@ -212,7 +223,6 @@ services:
     networks:
       - mac-net
 
-  # ── Nginx — Reverse proxy + SSL termination ─────────────
   nginx:
     image: nginx:alpine
     container_name: mac-nginx
@@ -245,7 +255,6 @@ services:
     networks:
       - mac-net
 
-  # ── Qdrant — Vector DB for RAG ─────────────────────────
   qdrant:
     image: qdrant/qdrant:latest
     container_name: mac-qdrant
@@ -262,7 +271,6 @@ services:
     networks:
       - mac-net
 
-  # ── SearXNG — Self-hosted web search ───────────────────
   searxng:
     image: searxng/searxng:latest
     container_name: mac-searxng
@@ -287,8 +295,8 @@ volumes:
   redisdata:
   qdrantdata:
   searxngdata:
-  hf-cache:      # Shared HuggingFace model cache across all vLLM instances
-  tts-voices:    # Persisted TTS voice models
+  hf-cache:       # Shared HuggingFace model cache (Sarvam-2B + Veena + Whisper)
+  tts-voices:
 
 networks:
   mac-net:

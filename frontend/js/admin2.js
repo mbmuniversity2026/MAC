@@ -314,7 +314,7 @@ async function renderAdminGuardrails() {
     <div><h2>Guardrails</h2><p class="muted" style="margin:0">Control AI safety filters in real time. Changes take effect immediately.</p></div>
     <button class="btn btn-primary" id="gr-add-btn" style="width:auto;padding:8px 16px">+ Add Rule</button>
   </div>
-  <div id="gr-rules-list"><div class="loading-state"><div class="spinner"></div><span>Loading rules"¦</span></div></div>`;
+  <div id="gr-rules-list"><div class="loading-state"><div class="spinner"></div><span>Loading rules...</span></div></div>`;
 
   document.getElementById('gr-add-btn').onclick = () => showAddGuardrailModal();
   await loadGuardrailRules();
@@ -328,7 +328,7 @@ async function loadGuardrailRules() {
     const rules = data.rules || [];
     const cats = [...new Set(rules.map(r => r.category))].sort();
     const actionClass = {block:'badge-danger',flag:'badge-warn',redact:'badge-purple',log:'badge-info'};
-    el.innerHTML = cats.map(cat => `
+    el.innerHTML = cats.length ? cats.map(cat => `
       <div class="gr-category">
         <div class="gr-cat-header">${esc(cat)}</div>
         ${rules.filter(r => r.category === cat).map(rule => `
@@ -349,7 +349,7 @@ async function loadGuardrailRules() {
               <button class="icon-btn gr-delete-btn" data-rule-id="${rule.id}" title="Delete rule">&times;</button>
             </div>
           </div>`).join('')}
-      </div>`).join('');
+      </div>`).join('') : '<div class="empty-state"><p>No guardrail rules configured yet</p></div>';
 
     // Bind toggles
     el.querySelectorAll('.gr-toggle-input').forEach(cb => {
@@ -435,7 +435,7 @@ async function renderAdminFeatures() {
   el.innerHTML = `<div class="admin-header">
     <div><h2>Feature Flags</h2><p class="muted" style="margin:0">Toggle features per-role. Changes propagate to all clients within 2 seconds via SSE.</p></div>
   </div>
-  <div id="features-list"><div class="loading-state"><div class="spinner"></div><span>Loading flags"¦</span></div></div>`;
+  <div id="features-list"><div class="loading-state"><div class="spinner"></div><span>Loading flags...</span></div></div>`;
 
   try {
     const data = await apiJson('/features/status');
@@ -495,8 +495,6 @@ async function renderAdminFeatures() {
 /*
    ADMIN — Live Activity Stream (IST real-time SSE)
 */
-let _activityEs = null;
-
 async function renderAdminActivityStream() {
   const el = document.getElementById('admin-content');
   el.innerHTML = `
@@ -510,7 +508,7 @@ async function renderAdminActivityStream() {
     </div>
     <div id="activity-feed" style="display:flex;flex-direction:column;gap:4px;max-height:70vh;overflow-y:auto;padding:4px 0"></div>`;
 
-  if (_activityEs) { _activityEs.close(); _activityEs = null; }
+  if (window._adminActivityEs) { window._adminActivityEs.close(); window._adminActivityEs = null; }
 
   const feed = document.getElementById('activity-feed');
 
@@ -531,18 +529,18 @@ async function renderAdminActivityStream() {
   }
 
   const token = encodeURIComponent(state.token || '');
-  _activityEs = new EventSource(`/api/v1/admin/activity/stream?token=${token}`);
+  window._adminActivityEs = new EventSource(`/api/v1/admin/activity/stream?token=${token}`);
 
-  _activityEs.onopen = () => {
+  window._adminActivityEs.onopen = () => {
     const dot = document.getElementById('act-dot');
     const lbl = document.getElementById('act-label');
     if (dot) dot.style.background = '#22c55e';
     if (lbl) lbl.textContent = 'Live';
   };
-  _activityEs.onmessage = e => {
+  window._adminActivityEs.onmessage = e => {
     try { _appendEntry(JSON.parse(e.data)); } catch {}
   };
-  _activityEs.onerror = () => {
+  window._adminActivityEs.onerror = () => {
     const dot = document.getElementById('act-dot');
     const lbl = document.getElementById('act-label');
     if (dot) dot.style.background = '#ef4444';
@@ -552,7 +550,7 @@ async function renderAdminActivityStream() {
   // Auto-close SSE when tab changes
   const obs = new MutationObserver(() => {
     if (!document.getElementById('activity-feed')) {
-      if (_activityEs) { _activityEs.close(); _activityEs = null; }
+      if (window._adminActivityEs) { window._adminActivityEs.close(); window._adminActivityEs = null; }
       obs.disconnect();
     }
   });
@@ -611,13 +609,12 @@ async function renderAdminTerminal() {
 
 async function _termLoadLibs() {
   if (window.Terminal) return true;
-  const CDN = 'https://cdn.jsdelivr.net/npm';
   try {
     await Promise.all([
-      _dynStyle(`${CDN}/xterm@5.3.0/css/xterm.css`),
-      _dynScript(`${CDN}/xterm@5.3.0/lib/xterm.min.js`),
+      _dynStyle('/static/libs/xterm.css'),
+      _dynScript('/static/libs/xterm.min.js'),
     ]);
-    await _dynScript(`${CDN}/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js`);
+    await _dynScript('/static/libs/xterm-addon-fit.min.js');
     return !!window.Terminal;
   } catch { return false; }
 }
@@ -644,8 +641,8 @@ async function _termConnect() {
 
   const ok = await _termLoadLibs();
   if (!ok) {
-    if (statusEl) statusEl.textContent = 'xterm.js load failed (need internet)';
-    showToast('xterm.js unavailable — check internet connection', 'error');
+    if (statusEl) statusEl.textContent = 'Terminal library load failed';
+    showToast('Terminal library unavailable. Refresh the page once.', 'error');
     return;
   }
 

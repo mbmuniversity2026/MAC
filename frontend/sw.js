@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mac-v5';
+const CACHE_NAME = 'mac-v8-voice-vad';
 const ASSETS = [
   '/',
   '/static/style.css',
@@ -47,6 +47,26 @@ self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
 
   if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/ws/')) return;
+
+  if (
+    url.pathname === '/' ||
+    url.pathname.endsWith('.html') ||
+    url.pathname.startsWith('/static/js/') ||
+    url.pathname === '/sw.js'
+  ) {
+    e.respondWith(
+      fetch(e.request, { cache: 'no-store' })
+        .then(resp => {
+          if (resp.ok) {
+            const clone = resp.clone();
+            caches.open(CACHE_NAME).then(c => c.put(e.request, clone));
+          }
+          return resp;
+        })
+        .catch(() => caches.match(e.request).then(cached => cached || caches.match('/')))
+    );
+    return;
+  }
 
   if (url.pathname.startsWith('/static/libs/')) {
     e.respondWith(

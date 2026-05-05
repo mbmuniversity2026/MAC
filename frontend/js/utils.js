@@ -61,7 +61,8 @@ function timeAgo(iso) {
 
 function shortModel(m) {
   if (!m) return '?';
-  return m.replace(/^(Qwen\/|deepseek-ai\/|openai\/)/, '').replace(/-Instruct$/, '').slice(0, 24);
+  return m.replace(/^(Qwen\/|deepseek-ai\/|openai\/|sarvamai\/|maya-research\/|mistralai\/|meta-llama\/)/, '')
+          .replace(/-(Instruct|AWQ|GPTQ|Chat|v\d+\.\d+)$/i, '').slice(0, 26);
 }
 
 function formatMd(text) {

@@ -96,17 +96,7 @@ window.addEventListener('appinstalled', () => {
 
 // —— Cert install banner for LAN devices on HTTP ——————————
 (function _certBannerCheck() {
-  const isHTTPS = location.protocol === 'https:';
-  const isLocalhost = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
-  if (!isHTTPS && !isLocalhost && !sessionStorage.getItem('mac_cert_dismissed')) {
-    window.addEventListener('DOMContentLoaded', () => {
-      const bar = document.createElement('div');
-      bar.id = 'cert-banner';
-      bar.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#D4834A;color:#fff;padding:10px 16px;font-size:13px;display:flex;align-items:center;justify-content:space-between;font-family:Inter,sans-serif;';
-      bar.innerHTML = '<span>Install the MAC certificate to enable app install &amp; HTTPS. <a href="/install-cert" style="color:#fff;font-weight:700;text-decoration:underline">Install Certificate</a></span><button onclick="this.parentElement.remove();sessionStorage.setItem(\'mac_cert_dismissed\',\'1\')" style="background:none;border:none;color:#fff;font-size:18px;cursor:pointer;padding:0 4px">&times;</button>';
-      document.body.prepend(bar);
-    });
-  }
+  sessionStorage.setItem('mac_cert_dismissed', '1');
 })();
 
 async function api(path, opts = {}) {

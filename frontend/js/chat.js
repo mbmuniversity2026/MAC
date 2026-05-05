@@ -335,10 +335,15 @@ function bindChat() {
   loadModelOptions();
   loadActiveModelBadge();
 
+  const modelSel = document.getElementById('model-select');
+  if (modelSel) modelSel.addEventListener('change', () => _updateModelBadge(true));
+
   // Voice chat button
   const voiceBtn = document.getElementById('voice-chat-btn');
   if (voiceBtn) voiceBtn.onclick = openVoiceChat;
 }
+
+let _modelDisplayMap = {}; // model-id → served_name for badge display
 
 async function loadModelOptions() {
   const sel = document.getElementById('model-select');
@@ -350,27 +355,31 @@ async function loadModelOptions() {
       const opt = document.createElement('option');
       opt.value = m.id;
       opt.textContent = m.name + (m.parameters ? ' (' + m.parameters + ')' : '');
+      _modelDisplayMap[m.id] = m.served_name || m.name;
       sel.appendChild(opt);
     });
-  } catch (e) { /* API offline "" auto option is enough */ }
+  } catch (e) { /* API offline — auto option is enough */ }
   if (currentSession && currentSession.model) sel.value = currentSession.model;
+  _updateModelBadge();
+}
+
+function _updateModelBadge(online) {
+  const badge = document.getElementById('active-model-badge');
+  if (!badge) return;
+  const sel = document.getElementById('model-select');
+  const modelId = sel ? sel.value : 'auto';
+  const served = _modelDisplayMap[modelId] || modelId;
+  const dot = online === false ? 'model-dot-off' : 'model-dot-on';
+  badge.innerHTML = `<span class="model-dot ${dot}"></span> ${esc(shortModel(served))}`;
+  badge.title = served;
 }
 
 async function loadActiveModelBadge() {
-  const badge = document.getElementById('active-model-badge');
-  if (!badge) return;
+  _updateModelBadge(true);
   try {
     const res = await fetch('/api/v1/explore/health');
-    if (!res.ok) { badge.innerHTML = '<span class="model-dot model-dot-off"></span> Offline'; return; }
-    const data = await res.json();
-    const models = (data.nodes || []).flatMap(n => n.models_loaded || []);
-    if (models.length > 0) {
-      badge.innerHTML = '<span class="model-dot model-dot-on"></span> ' + esc(shortModel(models[0]));
-      badge.title = 'Running: ' + models.join(', ');
-    } else {
-      badge.innerHTML = '<span class="model-dot model-dot-off"></span> No model';
-    }
-  } catch { badge.innerHTML = '<span class="model-dot model-dot-off"></span> Offline'; }
+    _updateModelBadge(res.ok);
+  } catch { _updateModelBadge(false); }
 }
 
 function newChat() {
@@ -653,33 +662,106 @@ let _voiceAudioCtx = null;
 let _voiceAudioQueue = [];
 let _voicePlaying = false;
 let _voiceTranscript = [];
+let _voiceOrbRaf = null;
+let _voiceTurnActive = false;
+let _voiceLastSpeechAt = 0;
+let _voiceLastStopSentAt = 0;
 
-function _voiceWaveAnim(canvasId, stream) {
-  const canvas = document.getElementById(canvasId);
-  if (!canvas) return null;
-  const ctx = canvas.getContext('2d');
-  const analyser = (_voiceAudioCtx || (window.AudioContext || window.webkitAudioContext) && new AudioContext()).createAnalyser();
-  analyser.fftSize = 64;
-  const src = analyser.context.createMediaStreamSource(stream);
-  src.connect(analyser);
-  const data = new Uint8Array(analyser.frequencyBinCount);
-  let raf;
-  function draw() {
-    raf = requestAnimationFrame(draw);
-    analyser.getByteFrequencyData(data);
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    const w = canvas.width / data.length;
-    const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#d4834a';
-    data.forEach((v, i) => {
-      const h = (v / 255) * canvas.height;
-      ctx.fillStyle = accent;
-      ctx.globalAlpha = 0.8;
-      ctx.fillRect(i * w, canvas.height - h, w - 2, h);
-    });
-    ctx.globalAlpha = 1;
+function _voiceInjectStyles() {
+  if (document.getElementById('mac-voice-styles')) return;
+  const s = document.createElement('style');
+  s.id = 'mac-voice-styles';
+  s.textContent = `
+    #mac-voice-overlay{position:fixed;inset:0;z-index:9000;background:rgba(7,5,3,.97);backdrop-filter:blur(16px);display:flex;align-items:center;justify-content:center;font-family:var(--font);color:#f0ebe6}
+    #mac-voice-panel{width:100%;max-width:420px;padding:36px 24px;display:flex;flex-direction:column;align-items:center}
+    #mac-voice-orb-wrap{position:relative;width:200px;height:200px;margin-bottom:32px;display:flex;align-items:center;justify-content:center}
+    #mac-voice-orb-glow{position:absolute;inset:-24px;border-radius:50%;background:radial-gradient(ellipse at center,rgba(212,131,74,.18) 0%,transparent 68%);animation:mac-orb-glow 3s ease-in-out infinite;pointer-events:none}
+    #mac-voice-orb{width:168px;height:168px;border-radius:50%;position:relative;background:radial-gradient(ellipse at 32% 28%,#f8d09a,#d4834a 38%,#9a3e0a 72%,#3a1204 100%);box-shadow:0 0 45px 18px rgba(212,131,74,.38),0 0 90px 35px rgba(180,70,15,.18),inset 0 8px 22px rgba(255,215,155,.28);transition:box-shadow .2s;cursor:default}
+    #mac-voice-orb .orb-gloss{position:absolute;width:52%;height:40%;top:11%;left:13%;background:radial-gradient(ellipse at center,rgba(255,255,255,.38) 0%,transparent 72%);border-radius:50%;pointer-events:none}
+    #mac-voice-orb.connecting{animation:mac-orb-pulse 2s ease-in-out infinite;background:radial-gradient(ellipse at 32% 28%,#dbc88a,#a07828 42%,#5a3a10 76%,#1e0e04 100%);box-shadow:0 0 28px 10px rgba(170,120,50,.3),0 0 55px 20px rgba(120,80,20,.12),inset 0 5px 16px rgba(210,180,100,.18)}
+    #mac-voice-orb.listening{animation:mac-orb-listen 1.7s ease-in-out infinite}
+    #mac-voice-orb.processing{animation:mac-orb-think 1.1s linear infinite}
+    #mac-voice-orb.speaking{animation:mac-orb-speak 0.55s ease-in-out infinite;background:radial-gradient(ellipse at 32% 28%,#ffe4b8,#f09050 34%,#c03808 66%,#4a1000 100%);box-shadow:0 0 65px 28px rgba(240,130,60,.55),0 0 130px 55px rgba(200,70,10,.25),inset 0 8px 24px rgba(255,225,165,.38)}
+    @keyframes mac-orb-glow{0%,100%{opacity:.5;transform:scale(1)}50%{opacity:.95;transform:scale(1.18)}}
+    @keyframes mac-orb-pulse{0%,100%{transform:scale(1);opacity:.7}50%{transform:scale(1.07);opacity:1}}
+    @keyframes mac-orb-listen{0%,100%{border-radius:50%;transform:scale(1);filter:brightness(1.05)}20%{border-radius:56% 44% 52% 48%/48% 56% 44% 52%;transform:scale(1.07);filter:brightness(1.18)}40%{border-radius:44% 56% 48% 52%/52% 44% 56% 48%;transform:scale(.97);filter:brightness(1.08)}60%{border-radius:52% 48% 58% 42%/42% 54% 46% 58%;transform:scale(1.08);filter:brightness(1.2)}80%{border-radius:48% 52% 44% 56%/56% 46% 54% 44%;transform:scale(.96);filter:brightness(1.1)}}
+    @keyframes mac-orb-think{0%{filter:brightness(1.1) hue-rotate(0deg);border-radius:50%}33%{filter:brightness(1.28) hue-rotate(18deg);border-radius:55% 45% 50% 50%/50% 50% 55% 45%}66%{filter:brightness(1.15) hue-rotate(-18deg);border-radius:45% 55% 50% 50%/50% 50% 45% 55%}100%{filter:brightness(1.1) hue-rotate(0deg);border-radius:50%}}
+    @keyframes mac-orb-speak{0%,100%{transform:scale(1.03);border-radius:50%;filter:brightness(1.22)}25%{border-radius:57% 43% 50% 50%/50% 50% 60% 40%;transform:scale(1.12);filter:brightness(1.38)}75%{border-radius:43% 57% 50% 50%/50% 50% 40% 60%;transform:scale(1.07);filter:brightness(1.3)}}
+    #mac-voice-title{font-size:.95rem;font-weight:700;color:var(--accent,#d4834a);letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px}
+    #mac-voice-status{font-size:.82rem;color:rgba(240,235,230,.52);margin-bottom:22px;min-height:1.2em;text-align:center;transition:color .3s}
+    #mac-voice-status.active{color:rgba(212,131,74,.85)}
+    #mac-voice-transcript{width:100%;max-height:190px;overflow-y:auto;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:10px 14px;font-size:.79rem;line-height:1.65;margin-bottom:26px;min-height:52px;scrollbar-width:thin;scrollbar-color:rgba(212,131,74,.28) transparent}
+    #mac-voice-transcript::-webkit-scrollbar{width:4px}
+    #mac-voice-transcript::-webkit-scrollbar-thumb{background:rgba(212,131,74,.28);border-radius:2px}
+    #mac-voice-controls{display:flex;gap:12px;justify-content:center}
+    #mac-voice-mute{padding:10px 22px;border-radius:10px;border:1.5px solid rgba(212,131,74,.45);background:rgba(212,131,74,.1);color:var(--accent,#d4834a);cursor:pointer;font-size:.84rem;font-weight:600;display:flex;align-items:center;gap:7px;transition:background .2s,border-color .2s,transform .1s}
+    #mac-voice-mute:hover{background:rgba(212,131,74,.22);border-color:rgba(212,131,74,.75);transform:translateY(-1px)}
+    #mac-voice-mute.muted{background:rgba(212,131,74,.22);border-color:var(--accent,#d4834a)}
+    #mac-voice-send{padding:10px 18px;border-radius:10px;border:1.5px solid rgba(255,255,255,.16);background:rgba(255,255,255,.06);color:rgba(240,235,230,.82);cursor:pointer;font-size:.84rem;font-weight:600;transition:background .2s,border-color .2s,transform .1s}
+    #mac-voice-send:hover{background:rgba(255,255,255,.11);border-color:rgba(212,131,74,.45);transform:translateY(-1px)}
+    #mac-voice-end{padding:10px 22px;border-radius:10px;border:none;background:linear-gradient(135deg,#b82020,#e03030);color:#fff;cursor:pointer;font-size:.84rem;font-weight:600;transition:opacity .2s,transform .1s;box-shadow:0 2px 14px rgba(200,30,30,.32)}
+    #mac-voice-end:hover{opacity:.84;transform:translateY(-1px)}
+    #mac-voice-httpsbar{margin-top:18px;padding:10px 16px;background:rgba(212,131,74,.1);border:1px solid rgba(212,131,74,.28);border-radius:10px;font-size:.75rem;color:rgba(240,235,230,.65);text-align:center;line-height:1.55;display:none}
+    #mac-voice-httpsbar a{color:var(--accent,#d4834a);text-decoration:none}
+    #mac-voice-httpsbar a:hover{text-decoration:underline}
+  `;
+  document.head.appendChild(s);
+}
+
+function _voiceSetState(state, msg) {
+  const orb = document.getElementById('mac-voice-orb');
+  if (orb) {
+    orb.className = state;
+    if (state !== 'listening') orb.style.transform = '';
   }
-  draw();
-  return { stop: () => { cancelAnimationFrame(raf); ctx.clearRect(0, 0, canvas.width, canvas.height); } };
+  const labels = {
+    connecting: 'Connecting...',
+    listening: 'Listening — speak now',
+    processing: 'Thinking...',
+    speaking: 'MAC is speaking...',
+    error: 'Connection error',
+    disconnected: 'Disconnected',
+  };
+  const el = document.getElementById('mac-voice-status');
+  if (el) {
+    el.textContent = msg || labels[state] || state;
+    el.className = (state === 'listening' || state === 'speaking') ? 'active' : '';
+  }
+}
+
+function _voiceStartOrbMic(stream) {
+  try {
+    const actx = _voiceAudioCtx || (_voiceAudioCtx = new (window.AudioContext || window.webkitAudioContext)());
+    if (actx.state === 'suspended') actx.resume().catch(() => {});
+    const analyser = actx.createAnalyser();
+    analyser.fftSize = 32;
+    actx.createMediaStreamSource(stream).connect(analyser);
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    const orb = document.getElementById('mac-voice-orb');
+    function tick() {
+      _voiceOrbRaf = requestAnimationFrame(tick);
+      analyser.getByteFrequencyData(data);
+      const avg = data.reduce((a, b) => a + b, 0) / data.length;
+      if (orb && orb.className === 'listening') {
+        const s = 1 + (avg / 255) * 0.32;
+        orb.style.transform = `scale(${s.toFixed(3)})`;
+      }
+      const now = Date.now();
+      const isSpeech = avg > 12;
+      if (isSpeech) {
+        _voiceTurnActive = true;
+        _voiceLastSpeechAt = now;
+      } else if (_voiceTurnActive && now - _voiceLastSpeechAt > 950) {
+        _voiceTurnActive = false;
+        if (_voiceWs && _voiceWs.readyState === WebSocket.OPEN && now - _voiceLastStopSentAt > 1100) {
+          _voiceLastStopSentAt = now;
+          _voiceWs.send(JSON.stringify({ type: 'stop' }));
+          _voiceSetState('processing', 'Listening complete. Thinking...');
+        }
+      }
+    }
+    tick();
+  } catch (_) {}
 }
 
 async function _voicePlayChunk(base64Audio) {
@@ -690,104 +772,129 @@ async function _voicePlayChunk(base64Audio) {
     const chunk = _voiceAudioQueue.shift();
     try {
       const bytes = Uint8Array.from(atob(chunk), c => c.charCodeAt(0));
-      const audioCtx = _voiceAudioCtx || (_voiceAudioCtx = new (window.AudioContext || window.webkitAudioContext)());
-      const buf = await audioCtx.decodeAudioData(bytes.buffer.slice());
+      const actx = _voiceAudioCtx || (_voiceAudioCtx = new (window.AudioContext || window.webkitAudioContext)());
+      const buf = await actx.decodeAudioData(bytes.buffer.slice());
       await new Promise(resolve => {
-        const src = audioCtx.createBufferSource();
+        const src = actx.createBufferSource();
         src.buffer = buf;
-        src.connect(audioCtx.destination);
+        src.connect(actx.destination);
         src.onended = resolve;
         src.start();
       });
-    } catch (e) {
-      console.warn('[Voice] Audio decode error:', e);
-    }
+    } catch (e) { console.warn('[Voice] audio decode:', e); }
   }
   _voicePlaying = false;
 }
 
-function _voiceSetStatus(text, overlay) {
-  const el = (overlay || document).getElementById('voice-status-text');
-  if (el) el.textContent = text;
-}
-
 function openVoiceChat() {
-  if (document.getElementById('voice-overlay')) return;
+  if (document.getElementById('mac-voice-overlay')) return;
+  _voiceInjectStyles();
+
   const overlay = document.createElement('div');
-  overlay.id = 'voice-overlay';
-  overlay.style.cssText = `
-    position:fixed;inset:0;z-index:9000;background:rgba(10,8,6,.96);
-    display:flex;flex-direction:column;align-items:center;justify-content:center;
-    font-family:var(--font);color:var(--text);
-  `;
+  overlay.id = 'mac-voice-overlay';
   overlay.innerHTML = `
-    <div style="text-align:center;max-width:480px;width:100%;padding:24px">
-      <div style="font-size:1.1rem;font-weight:700;color:var(--accent);margin-bottom:4px">Voice Chat</div>
-      <div id="voice-status-text" style="font-size:.85rem;color:var(--muted);margin-bottom:20px;min-height:1.2em">Connecting...</div>
-      <canvas id="voice-wave-canvas" width="320" height="60" style="width:100%;max-width:320px;border-radius:8px;background:rgba(255,255,255,.04);margin-bottom:20px"></canvas>
-      <div id="voice-transcript-area" style="width:100%;max-height:240px;overflow-y:auto;text-align:left;padding:8px 12px;background:rgba(255,255,255,.04);border-radius:10px;font-size:.82rem;line-height:1.6;margin-bottom:20px;min-height:48px">
-        <span style="color:var(--muted);font-style:italic">Your conversation will appear here...</span>
+    <div id="mac-voice-panel">
+      <div id="mac-voice-orb-wrap">
+        <div id="mac-voice-orb-glow"></div>
+        <div id="mac-voice-orb" class="connecting">
+          <div class="orb-gloss"></div>
+        </div>
       </div>
-      <div style="display:flex;gap:12px;justify-content:center">
-        <button id="voice-mute-btn" style="padding:10px 20px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer;font-size:.85rem">🎙 Mute</button>
-        <button id="voice-end-btn" style="padding:10px 20px;border-radius:8px;border:none;background:var(--danger,#dc2626);color:#fff;cursor:pointer;font-size:.85rem;font-weight:600">End Voice Chat</button>
+      <div id="mac-voice-title">MAC Voice</div>
+      <div id="mac-voice-status">Connecting...</div>
+      <div id="mac-voice-transcript">
+        <span style="color:rgba(240,235,230,.38);font-style:italic;font-size:.78rem">Your conversation will appear here...</span>
+      </div>
+      <div id="mac-voice-controls">
+        <button id="mac-voice-mute">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+          Mute
+        </button>
+        <button id="mac-voice-send">Send Now</button>
+        <button id="mac-voice-end">End Voice Chat</button>
+      </div>
+      <div id="mac-voice-httpsbar">
+        <strong style="color:var(--accent,#d4834a)">Mic is blocked by this browser context.</strong><br>
+        Open MAC with <code>launch-mac-chrome.bat</code> on this PC, or use HTTPS from a trusted browser session.
       </div>
     </div>`;
   document.body.appendChild(overlay);
 
-  let waveController = null;
   let muted = false;
   let accLlm = '';
 
-  // End button
-  overlay.querySelector('#voice-end-btn').onclick = closeVoiceChat;
-  // Mute button
-  overlay.querySelector('#voice-mute-btn').onclick = () => {
+  overlay.querySelector('#mac-voice-end').onclick = closeVoiceChat;
+  overlay.querySelector('#mac-voice-send').onclick = () => {
+    if (_voiceWs && _voiceWs.readyState === WebSocket.OPEN) {
+      _voiceLastStopSentAt = Date.now();
+      _voiceWs.send(JSON.stringify({ type: 'stop' }));
+      _voiceSetState('processing', 'Thinking...');
+    }
+  };
+
+  const muteBtn = overlay.querySelector('#mac-voice-mute');
+  muteBtn.onclick = () => {
     muted = !muted;
     if (_voiceMediaRecorder && _voiceMediaRecorder.stream) {
       _voiceMediaRecorder.stream.getAudioTracks().forEach(t => { t.enabled = !muted; });
     }
-    overlay.querySelector('#voice-mute-btn').textContent = muted ? '🔇 Unmute' : '🎙 Mute';
+    muteBtn.classList.toggle('muted', muted);
+    muteBtn.innerHTML = muted
+      ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg> Unmute`
+      : `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg> Mute`;
   };
 
-  const transcriptArea = overlay.querySelector('#voice-transcript-area');
   function appendTranscript(role, text) {
     if (!text.trim()) return;
+    const ta = document.getElementById('mac-voice-transcript');
+    if (!ta) return;
     const div = document.createElement('div');
-    div.style.cssText = `margin:4px 0;padding:4px 8px;border-radius:6px;background:${role==='user'?'rgba(212,131,74,.15)':'rgba(255,255,255,.06)'}`;
-    div.innerHTML = `<b style="color:${role==='user'?'var(--accent)':'var(--text)'}">${role==='user'?'You':'MAC'}:</b> ${esc(text)}`;
-    if (transcriptArea.querySelector('span')) transcriptArea.innerHTML = '';
-    transcriptArea.appendChild(div);
-    transcriptArea.scrollTop = transcriptArea.scrollHeight;
-    // Also add to text chat transcript
+    div.style.cssText = `margin:7px 0;padding:7px 11px;border-radius:9px;` +
+      (role === 'user'
+        ? 'background:rgba(212,131,74,.13);border-left:2.5px solid rgba(212,131,74,.55)'
+        : 'background:rgba(255,255,255,.05);border-left:2.5px solid rgba(255,255,255,.14)');
+    div.innerHTML = `<div style="font-size:.68rem;font-weight:700;color:${role==='user'?'rgba(212,131,74,.85)':'rgba(240,235,230,.45)'};text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px">${role==='user'?'You':'MAC'}</div>${esc(text)}`;
+    const ph = ta.querySelector('span');
+    if (ph) ta.innerHTML = '';
+    ta.appendChild(div);
+    ta.scrollTop = ta.scrollHeight;
     _voiceTranscript.push({ role, content: text });
   }
 
-  // Connect WebSocket
   const wsProto = location.protocol === 'https:' ? 'wss' : 'ws';
   const wsUrl = `${wsProto}://${location.host}/api/v1/voice/stream?token=${state.token || ''}`;
   const ws = new WebSocket(wsUrl);
   _voiceWs = ws;
+  _voiceTurnActive = false;
+  _voiceLastSpeechAt = 0;
+  _voiceLastStopSentAt = 0;
 
   ws.onopen = async () => {
-    _voiceSetStatus('Listening — speak now', overlay);
     ws.send(JSON.stringify({ type: 'start' }));
 
-    // Start mic
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      document.getElementById('mac-voice-httpsbar').style.display = 'block';
+      _voiceSetState('error', 'Mic unavailable in this browser session');
+      return;
+    }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-      waveController = _voiceWaveAnim('voice-wave-canvas', stream);
-
-      const mr = new MediaRecorder(stream, { mimeType: MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm' });
+      if (_voiceAudioCtx && _voiceAudioCtx.state === 'suspended') await _voiceAudioCtx.resume().catch(() => {});
+      _voiceSetState('listening');
+      _voiceStartOrbMic(stream);
+      const mr = new MediaRecorder(stream, {
+        mimeType: MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm',
+      });
       _voiceMediaRecorder = mr;
       mr.ondataavailable = e => {
-        if (e.data && e.data.size > 0 && ws.readyState === WebSocket.OPEN) {
+        if (e.data && e.data.size > 0 && ws.readyState === WebSocket.OPEN && (_voiceTurnActive || Date.now() - _voiceLastSpeechAt < 650)) {
           e.data.arrayBuffer().then(buf => ws.send(buf));
         }
       };
-      mr.start(200); // send chunks every 200ms for low-latency VAD
-    } catch (err) {
-      _voiceSetStatus('Mic access denied', overlay);
+      mr.start(200);
+    } catch (_) {
+      document.getElementById('mac-voice-httpsbar').style.display = 'block';
+      _voiceSetState('error', 'Mic access denied by browser');
     }
   };
 
@@ -795,55 +902,60 @@ function openVoiceChat() {
     try {
       const frame = JSON.parse(e.data);
       if (frame.type === 'transcript') {
-        _voiceSetStatus('Processing...', overlay);
+        _voiceSetState('processing');
         appendTranscript('user', frame.text);
         accLlm = '';
       } else if (frame.type === 'llm_chunk') {
         accLlm += frame.text;
-        _voiceSetStatus('MAC is responding...', overlay);
       } else if (frame.type === 'audio_chunk') {
-        _voiceSetStatus('Speaking...', overlay);
+        _voiceSetState('speaking');
         await _voicePlayChunk(frame.data);
       } else if (frame.type === 'done') {
         if (accLlm) appendTranscript('assistant', accLlm);
         accLlm = '';
-        _voiceSetStatus('Listening — speak now', overlay);
+        _voiceSetState('listening');
+      } else if (frame.type === 'info') {
+        _voiceSetState(frame.state || 'listening', frame.message);
       } else if (frame.type === 'error') {
-        _voiceSetStatus('Error: ' + frame.message, overlay);
+        _voiceSetState('error', 'Error: ' + frame.message);
       }
-    } catch {}
+    } catch (_) {}
   };
 
-  ws.onerror = () => _voiceSetStatus('Connection error', overlay);
+  ws.onerror = () => _voiceSetState('error');
   ws.onclose = () => {
-    _voiceSetStatus('Disconnected', overlay);
-    if (waveController) waveController.stop();
-    if (_voiceMediaRecorder) { try { _voiceMediaRecorder.stop(); } catch {} }
+    if (_voiceOrbRaf) { cancelAnimationFrame(_voiceOrbRaf); _voiceOrbRaf = null; }
+    if (_voiceMediaRecorder) { try { _voiceMediaRecorder.stop(); } catch (_) {} }
+    const el = document.getElementById('mac-voice-status');
+    if (el && !el.textContent.includes('HTTPS') && !el.textContent.includes('denied'))
+      _voiceSetState('disconnected');
   };
 
-  // Live dot on button
   const liveDot = document.getElementById('voice-live-dot');
   if (liveDot) liveDot.style.display = '';
 }
 
 function closeVoiceChat() {
-  const overlay = document.getElementById('voice-overlay');
+  const overlay = document.getElementById('mac-voice-overlay');
   if (overlay) overlay.remove();
-  if (_voiceWs) { try { _voiceWs.close(); } catch {} _voiceWs = null; }
-  if (_voiceMediaRecorder) { try { _voiceMediaRecorder.stop(); _voiceMediaRecorder.stream.getTracks().forEach(t => t.stop()); } catch {} _voiceMediaRecorder = null; }
+  if (_voiceWs) { try { _voiceWs.close(); } catch (_) {} _voiceWs = null; }
+  if (_voiceMediaRecorder) {
+    try { _voiceMediaRecorder.stop(); _voiceMediaRecorder.stream.getTracks().forEach(t => t.stop()); } catch (_) {}
+    _voiceMediaRecorder = null;
+  }
+  if (_voiceOrbRaf) { cancelAnimationFrame(_voiceOrbRaf); _voiceOrbRaf = null; }
   _voiceAudioQueue = [];
   _voicePlaying = false;
+  _voiceTurnActive = false;
+  _voiceLastSpeechAt = 0;
+  _voiceLastStopSentAt = 0;
   const liveDot = document.getElementById('voice-live-dot');
   if (liveDot) liveDot.style.display = 'none';
-
-  // If there's transcript, add it to the text chat as a summary
   if (_voiceTranscript.length) {
-    _voiceTranscript.forEach(m => {
-      if (currentSession) currentSession.messages.push(m);
-    });
+    _voiceTranscript.forEach(m => { if (currentSession) currentSession.messages.push(m); });
     _voiceTranscript = [];
     persistSession();
-    renderMessages();
+    if (currentSession) loadSession(currentSession.id);
   }
 }
 

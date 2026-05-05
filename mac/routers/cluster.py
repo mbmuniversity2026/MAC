@@ -246,6 +246,35 @@ async def heartbeat(body: HeartbeatRequest, db: AsyncSession = Depends(get_db)):
     node.cpu_util_pct = body.cpu_util_pct
     node.last_heartbeat = _utcnow()
 
+    # Workers are started by the Windows launcher with one active vLLM model.
+    # Record that deployment automatically so cluster routing can use it as soon
+    # as the admin approves the node.
+    for model_id in body.active_models:
+        if not model_id:
+            continue
+        existing_deploy = (await db.execute(
+            select(NodeModelDeployment).where(
+                NodeModelDeployment.node_id == node.id,
+                NodeModelDeployment.model_id == model_id,
+                NodeModelDeployment.vllm_port == node.port,
+            )
+        )).scalar_one_or_none()
+        if existing_deploy:
+            existing_deploy.status = "ready"
+            existing_deploy.served_name = model_id
+        else:
+            db.add(NodeModelDeployment(
+                node_id=node.id,
+                model_id=model_id,
+                model_name=model_id,
+                served_name=model_id,
+                vllm_port=node.port or 8001,
+                gpu_memory_util=0.85,
+                max_model_len=4096,
+                status="ready",
+                deployed_by="worker-agent",
+            ))
+
     # Record time-series heartbeat
     hb = ClusterHeartbeat(
         node_id=node.id,

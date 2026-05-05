@@ -1,18 +1,22 @@
 # ═══════════════════════════════════════════════════════════
-#  MAC Worker Node — run this on each worker PC
-#  Worker PCs run: vLLM (GPU inference) + optional Jupyter
-#  PostgreSQL/Redis/Nginx stay on the master node only.
+#  MAC Worker Node — run on any GPU PC to expand the cluster
 #
-#  Steps:
-#    1. Copy this file + worker_agent.py to the worker PC
-#    2. Create .env.worker with MAC_ENROLL_TOKEN and MAC_MASTER_URL
-#    3. docker compose -f docker-compose.worker.yml up -d
-#    4. Admin approves the node in the MAC cluster panel
+#  Setup:
+#    1. Run start-mac-worker.bat  (creates .env.worker)
+#    2. Admin approves node in Admin Panel → Cluster → Nodes
+#    3. This PC now serves AI inference for campus students
+#
+#  Models (set VLLM_MODEL in .env.worker):
+#    deepseek-ai/DeepSeek-R1-Distill-Llama-8B  Logic/Math
+#    Qwen/Qwen2.5-Coder-7B-Instruct            Programming
+#    sarvamai/sarvam-2b-v0.5                   Speed/Chat
+#    meta-llama/Llama-3.1-8B-Instruct          General Ed
+#    mistralai/Mistral-7B-v0.3                 Creative Arts
 # ═══════════════════════════════════════════════════════════
 
 services:
 
-  # ── vLLM GPU Inference ─────────────────────────────────────
+  # ── vLLM GPU Inference ─────────────────────────────────────────────────────
   vllm:
     image: vllm/vllm-openai:latest
     container_name: mac-worker-vllm
@@ -20,17 +24,19 @@ services:
       - "${VLLM_PORT:-8001}:8001"
     environment:
       - HF_HOME=/root/.cache/huggingface
-      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
+      - HF_TOKEN=${HF_TOKEN:-}
+      - TRANSFORMERS_OFFLINE=${TRANSFORMERS_OFFLINE:-0}
     volumes:
       - hf-cache:/root/.cache/huggingface
     command: >
-      --model ${VLLM_MODEL:-Qwen/Qwen2.5-7B-Instruct-AWQ}
+      --model ${VLLM_MODEL:-sarvamai/sarvam-2b-v0.5}
       --port ${VLLM_PORT:-8001}
-      --gpu-memory-utilization ${VLLM_GPU_MEM:-0.85}
-      --max-model-len ${VLLM_MAX_LEN:-8192}
+      --gpu-memory-utilization ${VLLM_GPU_MEM:-0.45}
+      --max-model-len ${VLLM_MAX_LEN:-4096}
       --trust-remote-code
       --enforce-eager
-      --served-model-name ${VLLM_SERVED_NAME:-Qwen/Qwen2.5-7B-Instruct-AWQ}
+      --dtype auto
+      --served-model-name ${VLLM_MODEL:-sarvamai/sarvam-2b-v0.5}
     deploy:
       resources:
         reservations:
@@ -48,15 +54,38 @@ services:
       retries: 3
       start_period: 120s
 
-  # ── Jupyter Kernel Gateway (optional — for notebook offload) ──
-  # Enable by setting ENABLE_NOTEBOOK=1 in .env.worker
+  # ── Worker Agent — registers + heartbeats to master ───────────────────────
+  worker-agent:
+    image: python:3.11-slim
+    container_name: mac-worker-agent
+    working_dir: /app
+    volumes:
+      - ./worker_agent.py:/app/worker_agent.py:ro
+      - worker-state:/app
+    command: >
+      python worker_agent.py
+    environment:
+      - MAC_MASTER_URL=${MAC_MASTER_URL}
+      - MAC_ENROLL_TOKEN=${MAC_ENROLL_TOKEN:-}
+      - MAC_WORKER_NAME=${MAC_WORKER_NAME:-Worker}
+      - MAC_WORKER_IP=${MAC_WORKER_IP:-}
+      - MAC_VLLM_PORT=${VLLM_PORT:-8001}
+      - MAC_VLLM_MODEL=${VLLM_MODEL:-sarvamai/sarvam-2b-v0.5}
+      - MAC_HEARTBEAT_SEC=${MAC_HEARTBEAT_SEC:-10}
+    networks:
+      - worker-net
+    restart: unless-stopped
+    depends_on:
+      vllm:
+        condition: service_healthy
+
+  # ── Jupyter Kernel Gateway (optional — notebook offload) ──────────────────
+  # Enable: docker compose -f docker-compose.worker.yml --profile notebook up -d
   jupyter:
     image: jupyter/scipy-notebook:latest
     container_name: mac-worker-jupyter
     ports:
-      - "${NOTEBOOK_PORT:-8888}:8888"
-    environment:
-      - JUPYTER_ENABLE_LAB=no
+      - "${NOTEBOOK_PORT:-8889}:8888"
     command: >
       jupyter kernelgateway
       --KernelGatewayApp.ip=0.0.0.0
@@ -69,35 +98,12 @@ services:
     networks:
       - worker-net
     profiles:
-      - notebook   # only starts with: docker compose --profile notebook up
-
-  # ── Worker Agent ───────────────────────────────────────────
-  worker-agent:
-    image: python:3.11-slim
-    container_name: mac-worker-agent
-    working_dir: /app
-    volumes:
-      - ./worker_agent.py:/app/worker_agent.py:ro
-    command: >
-      sh -c "pip install --quiet httpx psutil pynvml && python worker_agent.py"
-    environment:
-      - MAC_MASTER_URL=${MAC_MASTER_URL}
-      - MAC_ENROLL_TOKEN=${MAC_ENROLL_TOKEN:-}
-      - MAC_NODE_TOKEN=${MAC_NODE_TOKEN:-}
-      - MAC_WORKER_NAME=${MAC_WORKER_NAME:-Worker}
-      - MAC_VLLM_PORT=${VLLM_PORT:-8001}
-      - MAC_NOTEBOOK_PORT=${NOTEBOOK_PORT:-}
-      - MAC_TAGS=${MAC_TAGS:-llm}
-      - MAC_HEARTBEAT_SEC=${HEARTBEAT_SEC:-10}
-    network_mode: host   # needs to see vLLM on localhost AND reach master
-    restart: unless-stopped
-    depends_on:
-      vllm:
-        condition: service_healthy
+      - notebook
 
 volumes:
   hf-cache:
   notebooks:
+  worker-state:
 
 networks:
   worker-net:

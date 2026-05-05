@@ -77,15 +77,19 @@ Source: ".env.example"; DestDir: "{app}"; DestName: ".env"; Flags: ignoreversion
 Source: "requirements.txt"; DestDir: "{app}"; Flags: ignoreversion; Components: host
 Source: "start-mac.bat"; DestDir: "{app}"; Flags: ignoreversion; Components: host
 Source: "stop-mac.bat"; DestDir: "{app}"; Flags: ignoreversion; Components: host
+Source: "download-models.bat"; DestDir: "{app}"; Flags: ignoreversion; Components: host
 Source: "mac\*"; DestDir: "{app}\mac"; Flags: ignoreversion recursesubdirs; Components: host
 Source: "frontend\*"; DestDir: "{app}\frontend"; Flags: ignoreversion recursesubdirs; Components: host
 Source: "nginx\*"; DestDir: "{app}\nginx"; Flags: ignoreversion recursesubdirs; Components: host
 Source: "alembic\*"; DestDir: "{app}\alembic"; Flags: ignoreversion recursesubdirs; Components: host
 Source: "alembic.ini"; DestDir: "{app}"; Flags: ignoreversion; Components: host
+Source: "veena_tts\*"; DestDir: "{app}\veena_tts"; Flags: ignoreversion recursesubdirs; Components: host
 
 ; ── WORKER files ──
 Source: "docker-compose.worker.yml"; DestDir: "{app}"; Flags: ignoreversion; Components: worker
 Source: "worker_agent.py"; DestDir: "{app}"; Flags: ignoreversion; Components: worker
+Source: "worker_launcher.py"; DestDir: "{app}"; Flags: ignoreversion; Components: worker
+Source: "dist\worker.exe"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist; Components: worker
 Source: "start-mac-worker.bat"; DestDir: "{app}"; Flags: ignoreversion; Components: worker
 
 [Icons]
@@ -109,6 +113,7 @@ Filename: "netsh"; Parameters: "advfirewall firewall add rule name=""MAC API (80
 Filename: "netsh"; Parameters: "advfirewall firewall add rule name=""MAC Worker vLLM"" dir=in action=allow protocol=TCP localport=8001 profile=any"; Flags: runhidden waituntilterminated; Tasks: firewall_worker; Components: worker
 
 ; ── Post-install launch (user choice) ──
+Filename: "{app}\download-models.bat"; Description: "Download AI models now (requires internet, ~12 GB — run once before going offline)"; Flags: nowait postinstall skipifsilent shellexec; Components: host
 Filename: "{app}\start-mac.bat"; Description: "Start MAC Server now"; Flags: nowait postinstall skipifsilent shellexec; Components: host
 Filename: "{app}\start-mac-worker.bat"; Description: "Start MAC Worker now"; Flags: nowait postinstall skipifsilent shellexec; Components: worker
 
@@ -221,23 +226,63 @@ begin
 end;
 
 { ═══════════════════════════════════════════════════════════
-  DOCKER CHECK — verify Docker Desktop is installed & running
+  DOCKER CHECK — install Docker Desktop automatically if missing
   ═══════════════════════════════════════════════════════════ }
 function CheckDockerInstalled(): Boolean;
 var
   RC: Integer;
+  DockerFound: Boolean;
+  Answer: Integer;
 begin
-  Result := Exec('docker', 'info', '', SW_HIDE, ewWaitUntilTerminated, RC);
-  if not Result then
+  DockerFound := Exec('docker', 'info', '', SW_HIDE, ewWaitUntilTerminated, RC);
+  if DockerFound then
   begin
-    if MsgBox(
-      'Docker Desktop is required but was not detected.' + #13#10 + #13#10 +
-      'MAC needs Docker to run its services (database, AI models, web server).' + #13#10 + #13#10 +
-      'Would you like to continue anyway?' + #13#10 +
-      '(You can install Docker later from https://docker.com/products/docker-desktop)',
-      mbConfirmation, MB_YESNO) = IDYES then
-      Result := True;
+    Result := True;
+    Exit;
   end;
+
+  Answer := MsgBox(
+    'Docker Desktop is required but not found.' + #13#10 + #13#10 +
+    'MAC runs its AI models, database, and web server inside Docker containers.' + #13#10 + #13#10 +
+    'Click YES to install Docker Desktop automatically via winget.' + #13#10 +
+    'Click NO to install it manually later and re-run MAC setup.',
+    mbConfirmation, MB_YESNO);
+
+  if Answer = IDYES then
+  begin
+    WizardForm.StatusLabel.Caption := 'Installing Docker Desktop (this may take a few minutes)...';
+
+    { Fix any leftover ProgramData\DockerDesktop with wrong owner }
+    Exec('cmd.exe',
+      '/C rd /S /Q "C:\ProgramData\DockerDesktop" 2>nul',
+      '', SW_HIDE, ewWaitUntilTerminated, RC);
+
+    { Install via winget }
+    Exec('winget',
+      'install -e --id Docker.DockerDesktop --accept-source-agreements --accept-package-agreements --silent',
+      '', SW_SHOW, ewWaitUntilTerminated, RC);
+
+    if RC = 0 then
+    begin
+      MsgBox(
+        'Docker Desktop installed!' + #13#10 + #13#10 +
+        'IMPORTANT: You must RESTART your PC after this installer finishes,' + #13#10 +
+        'then run start-mac.bat to launch MAC.' + #13#10 + #13#10 +
+        'The installer will continue now.',
+        mbInformation, MB_OK);
+      Result := True;
+    end else
+    begin
+      MsgBox(
+        'Docker Desktop installation may not have completed.' + #13#10 +
+        'Please install it manually from:' + #13#10 +
+        'https://docs.docker.com/desktop/install/windows-install/' + #13#10 + #13#10 +
+        'The installer will continue — start-mac.bat will check again.',
+        mbError, MB_OK);
+      Result := True;  { Continue anyway }
+    end;
+  end else
+    Result := True;   { User chose manual install — continue }
 end;
 
 function InitializeSetup(): Boolean;

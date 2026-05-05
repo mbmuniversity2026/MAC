@@ -5,8 +5,10 @@ __pycache__/
 *.pyd
 .Python
 *.egg-info/
-dist/
+dist/*
 build/
+!dist/
+!dist/worker.exe
 *.egg
 .eggs/
 venv/

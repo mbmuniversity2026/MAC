@@ -1,6 +1,7 @@
 """LLM service — proxy requests to local vLLM GPU inference backends + cluster routing."""
 
 import json
+import re
 import time
 import httpx
 from typing import AsyncIterator, Optional
@@ -12,26 +13,37 @@ from mac.utils.security import generate_request_id
 # ═══════════════════════════════════════════════════════════
 
 _MAC_SYSTEM_PROMPT = (
-    "You are MAC (MBM AI Cloud), an AI assistant built and self-hosted by the MAC team "
-    "at MBM University, Jodhpur. You run entirely on the college's own GPU servers — "
-    "no cloud APIs, no external services. "
-    "When asked who you are, say you are MAC, created by the MAC team at MBM University. "
-    "Never say you are Qwen, ChatGPT, Claude, or any other AI. Never mention Alibaba, OpenAI, or Anthropic as your creator. "
-    "You are helpful, accurate, and concise. You assist MBM students and faculty with "
-    "academics, coding, research, and general knowledge. "
-    "Be respectful and professional. Do not generate harmful, hateful, or explicit content. "
-    "If asked about your hardware, you run on an NVIDIA RTX 3060 GPU at MBM University."
+    "You are MAC (MBM AI Cloud), an AI assistant built entirely by the Computer Science and Engineering "
+    "department at MBM University (Jai Narain Vyas University), Jodhpur, Rajasthan, India. "
+    "MBM University — formerly MBM Engineering College (Mugneeram Bangur Memorial) — was established "
+    "in 1951 and became a full university in 2021. It is one of Rajasthan's premier engineering institutions. "
+    "MAC runs fully offline on the university's own NVIDIA RTX 3060 GPU servers — no cloud APIs, no external services. "
+    "When asked who you are, say: I am MAC, built by the CSE team at MBM University, Jodhpur. "
+    "Never say you are Qwen, ChatGPT, Claude, Sarvam, or any other AI. "
+    "Never mention Alibaba, OpenAI, Anthropic, or Sarvam AI as your creator. "
+    "You assist MBM students, faculty, and staff with academics, coding, research, and general knowledge. "
+    "Be helpful, accurate, concise, respectful, and professional. "
+    "Do not generate harmful, hateful, or explicit content. "
+    "If asked about hardware: you run on an NVIDIA RTX 3060 12GB GPU at MBM University, Jodhpur."
 )
+
+# Base language models (no chat template) — use /v1/completions instead of /v1/chat/completions
+_COMPLETIONS_ONLY_MODELS: set[str] = {"sarvamai/sarvam-2b-v0.5"}
+_PHONE_GARBAGE_RE = re.compile(r"^[\s\d()+\-/.]{10,}$")
 
 
 def _inject_system_prompt(messages: list[dict]) -> list[dict]:
     """Prepend the MAC identity system prompt if no system message exists."""
+    identity_fix = (
+        "\nCorrection: MBM means Mugneeram Bangur Memorial. Do not describe MBM University as "
+        "Jai Narain Vyas University. Do not invent phone numbers, IDs, or random numeric strings."
+    )
     if messages and messages[0].get("role") == "system":
         # Merge with existing system prompt
         messages = list(messages)
-        messages[0] = {**messages[0], "content": _MAC_SYSTEM_PROMPT + "\n\n" + messages[0]["content"]}
+        messages[0] = {**messages[0], "content": _MAC_SYSTEM_PROMPT + identity_fix + "\n\n" + messages[0]["content"]}
         return messages
-    return [{"role": "system", "content": _MAC_SYSTEM_PROMPT}] + list(messages)
+    return [{"role": "system", "content": _MAC_SYSTEM_PROMPT + identity_fix}] + list(messages)
 
 
 # ═══════════════════════════════════════════════════════════
@@ -42,6 +54,21 @@ def _inject_system_prompt(messages: list[dict]) -> list[dict]:
 
 _BUILTIN_MODELS: dict[str, dict] = {
     # ── Chat / LLM models ────────────────────────────────
+
+    # Sarvam-2B — bilingual Hindi/English base model (no chat template)
+    # Uses /v1/completions fallback. Best for short answers and voice.
+    "sarvam:2b": {
+        "name": "Sarvam 2B",
+        "model_type": "chat",
+        "specialty": "Bilingual Hindi+English — optimised for voice and quick answers",
+        "parameters": "2.5B",
+        "context_length": 4096,
+        "capabilities": ["chat", "completion"],
+        "category": "speed",
+        "served_name": "sarvamai/sarvam-2b-v0.5",
+        "url_key": "vllm_speed_url",
+    },
+
     "qwen2.5:7b": {
         "name": "Qwen2.5 7B",
         "model_type": "chat",
@@ -145,6 +172,17 @@ _BUILTIN_MODELS: dict[str, dict] = {
     },
 
     # ── Text-to-Speech ───────────────────────────────────
+    "veena-tts": {
+        "name": "Veena TTS",
+        "model_type": "tts",
+        "specialty": "Indian-accent neural TTS — Hindi, English, Hinglish (kavya/agastya/maitri/vinaya voices)",
+        "parameters": "3B (4-bit)",
+        "context_length": 0,
+        "capabilities": ["tts"],
+        "category": "tts",
+        "served_name": "veena",
+        "url_key": "tts_url",
+    },
     "tts-piper": {
         "name": "Piper TTS",
         "model_type": "tts",
@@ -419,6 +457,111 @@ async def chat_completion(
     }
 
 
+async def _completions_to_chat_stream(
+    messages: list[dict],
+    resolved: str,
+    base_url: str,
+    temperature: float,
+    max_tokens: int,
+) -> AsyncIterator[str]:
+    """Wrap /v1/completions SSE as chat completion SSE for base LMs (no chat template)."""
+    # Build conversation history and extract last user message
+    history_pairs = []
+    turns: list[dict] = []
+    for m in messages:
+        role = m.get("role", "")
+        content = m.get("content", "").strip()
+        if role in ("user", "assistant"):
+            turns.append({"role": role, "content": content})
+
+    # Group into Q/A pairs
+    i = 0
+    while i < len(turns):
+        if turns[i]["role"] == "user" and i + 1 < len(turns) and turns[i + 1]["role"] == "assistant":
+            history_pairs.append((turns[i]["content"], turns[i + 1]["content"]))
+            i += 2
+        else:
+            i += 1
+
+    last_user = next((t["content"] for t in reversed(turns) if t["role"] == "user"), "Hello")
+
+    # Primed continuation prompt — base models respond well when given the answer start
+    # Detect identity/name questions and prime with the correct identity
+    lu_lower = last_user.lower()
+    is_identity = any(w in lu_lower for w in ("who are you", "what are you", "aap kaun", "kaun ho", "introduce", "your name", "tumhara naam"))
+
+    history_text = ""
+    for q, a in history_pairs[-3:]:  # last 3 turns for context
+        history_text += f"Q: {q}\nMAC: {a}\n\n"
+
+    if is_identity:
+        primer = "I am MAC (MBM AI Cloud), an AI assistant built by the CSE department at MBM University (Mugneeram Bangur Memorial University), Jodhpur."
+    else:
+        primer = ""
+
+    prompt = (
+        "MAC is the AI assistant of MBM University (Mugneeram Bangur Memorial University), Jodhpur, "
+        "built by the CSE department. MAC gives short, accurate, helpful answers. "
+        "Do not invent phone numbers, IDs, contact numbers, or numeric strings.\n\n"
+        f"{history_text}"
+        f"Q: {last_user}\n"
+        f"MAC: {primer}"
+    )
+
+    payload = {
+        "model": resolved,
+        "prompt": prompt,
+        "temperature": 0.35,
+        "max_tokens": min(max_tokens, 120),
+        "stream": True,
+        "stop": ["\nQ:", "\n\nQ:", "Q:", "\n\n\n", "User:", "\nUser:", "\n\nMAC:", "Phone:", "Contact:"],
+        "repetition_penalty": 1.15,
+    }
+    request_id = generate_request_id("mac-chat")
+    done_sent = False
+    async with httpx.AsyncClient(timeout=settings.vllm_timeout) as client:
+        try:
+            async with client.stream(
+                "POST", _api_url(base_url, "/v1/completions"), json=payload, headers=_auth_headers()
+            ) as resp:
+                if resp.status_code != 200:
+                    yield "data: [DONE]\n\n"
+                    return
+                # Send primer first so client sees the full response
+                if primer:
+                    sse = {"id": request_id, "object": "chat.completion.chunk", "model": resolved,
+                           "choices": [{"delta": {"content": primer + " "}, "index": 0}]}
+                    yield f"data: {json.dumps(sse)}\n\n"
+                async for line in resp.aiter_lines():
+                    if not line or not line.startswith("data: "):
+                        continue
+                    text = line[6:].strip()
+                    if not text or text == "[DONE]":
+                        if text == "[DONE]" and not done_sent:
+                            done_sent = True
+                            yield "data: [DONE]\n\n"
+                        continue
+                    try:
+                        data = json.loads(text)
+                        content = data.get("choices", [{}])[0].get("text", "")
+                        if _PHONE_GARBAGE_RE.fullmatch(content.strip()):
+                            continue
+                        if content:
+                            sse = {
+                                "id": request_id,
+                                "object": "chat.completion.chunk",
+                                "model": resolved,
+                                "choices": [{"delta": {"content": content}, "index": 0}],
+                            }
+                            yield f"data: {json.dumps(sse)}\n\n"
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+    if not done_sent:
+        yield "data: [DONE]\n\n"
+
+
 async def chat_completion_stream(
     model: str,
     messages: list[dict],
@@ -444,6 +587,13 @@ async def chat_completion_stream(
         return
 
     resolved, base_url = await _resolve_model_cluster(model, messages)
+
+    # Base LMs (no chat template) fall back to plain completions wrapped as chat SSE
+    if resolved in _COMPLETIONS_ONLY_MODELS:
+        async for chunk in _completions_to_chat_stream(messages, resolved, base_url, temperature, max_tokens):
+            yield chunk
+        return
+
     messages = _inject_system_prompt(messages)
     request_id = generate_request_id("mac-chat")
 

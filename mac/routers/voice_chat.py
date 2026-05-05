@@ -19,6 +19,7 @@ import asyncio
 import base64
 import io
 import json
+import re
 import time
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,6 +32,7 @@ from mac.services import llm_service, activity_service
 from mac.utils.security import decode_access_token
 
 router = APIRouter(prefix="/voice", tags=["Voice Chat"])
+_PHONE_GARBAGE_RE = re.compile(r"^[\s\d()+\-/.]{10,}$")
 
 # VAD silence threshold (ms) — allow "umms" and thinking pauses
 VAD_SILENCE_MS = 800
@@ -38,15 +40,34 @@ VAD_SILENCE_MS = 800
 MAX_AUDIO_BYTES = 10 * 1024 * 1024  # 10 MB
 
 SYSTEM_PROMPT_EN = (
-    "You are MAC, the MBM AI Cloud assistant. Respond naturally and conversationally "
-    "as if speaking aloud. Keep responses concise — 1-3 sentences for simple questions, "
-    "up to a short paragraph for complex ones. Avoid bullet points or markdown formatting."
+    "You are MAC — MBM AI Cloud — an AI assistant built entirely by the Computer Science and Engineering "
+    "department at MBM University (formerly MBM Engineering College, Mugneeram Bangur Memorial), "
+    "Jodhpur, Rajasthan, India. MBM University was established in 1951 and became a full university in 2021 — "
+    "it is one of Rajasthan's premier engineering institutions. "
+    "MAC runs fully offline on the university's own NVIDIA RTX 3060 GPU servers — no external cloud APIs. "
+    "You assist MBM students, faculty, and staff with academics, research, coding, general knowledge, "
+    "and university-related queries. "
+    "Speak naturally and conversationally as if talking aloud. Keep answers concise — "
+    "1-3 sentences for simple questions, up to a short paragraph for complex ones. "
+    "Avoid bullet points or markdown. "
+    "If asked who built you: say MAC was built by the CSE team at MBM University, Jodhpur. "
+    "Never say you are Sarvam, ChatGPT, Claude, or any other AI system."
 )
 SYSTEM_PROMPT_HI = (
-    "Aap MAC hain, MBM AI Cloud ke assistant. Naturally aur conversationally reply karein "
-    "jaise bol rahe hon. Responses short rakhein — simple sawaalon ke liye 1-3 sentences. "
-    "Bullet points ya formatting use na karein."
+    "Aap MAC hain - MBM AI Cloud - jo MBM University (Mugneeram Bangur Memorial, pehle MBM Engineering "
+    "College) ke Computer Science aur Engineering department ne banaya hai. "
+    "MBM University Jodhpur, Rajasthan mein hai — 1951 mein sthaapit, aur 2021 mein university bani. "
+    "MAC university ke apne NVIDIA RTX 3060 GPU servers par chalta hai — bilkul offline, koi cloud nahi. "
+    "MBM ke students, faculty aur staff ki padhai, research, coding aur general queries mein madad karo. "
+    "Naturally aur conversationally bolein jaise baat kar rahe hon. "
+    "Simple sawaalon ka jawab 1-3 sentences mein dein. "
+    "Bullet points ya formatting use na karein. "
+    "Agar poochha jaaye kisne banaya: kahein MAC ko MBM University Jodhpur ki CSE team ne banaya. "
+    "Kabhi mat kahein ki aap Sarvam, ChatGPT ya koi aur AI hain."
 )
+
+# Voice model — Sarvam-2B: bilingual Hindi/English, fast, fits 12 GB alongside Veena
+_VOICE_MODEL = "sarvam:2b"
 
 
 async def _auth_ws(token: str | None, db: AsyncSession) -> User | None:
@@ -80,33 +101,79 @@ async def _transcribe(audio_bytes: bytes, filename: str = "audio.webm") -> dict:
         return {"text": "", "language": "en", "error": str(e)}
 
 
+def _messages_to_prompt(messages: list[dict]) -> str:
+    """Convert chat messages to a plain-text prompt for base LLMs."""
+    lines = []
+    for m in messages:
+        role = m.get("role", "")
+        content = m.get("content", "")
+        if role == "system":
+            lines.append(f"System: {content}")
+        elif role == "user":
+            lines.append(f"User: {content}")
+        elif role == "assistant":
+            lines.append(f"Assistant: {content}")
+    lines.append("Assistant:")
+    return "\n".join(lines)
+
+
 async def _llm_stream(messages: list[dict], model: str):
-    """Stream LLM response, yielding text chunks."""
-    async for chunk in llm_service.chat_completion_stream(
-        model=model,
-        messages=messages,
-        temperature=0.7,
-        max_tokens=300,
-    ):
-        if chunk.startswith("data: ") and "[DONE]" not in chunk:
-            try:
-                data = json.loads(chunk[6:].strip())
-                content = data.get("choices", [{}])[0].get("delta", {}).get("content", "")
-                if content:
-                    yield content
-            except Exception:
-                pass
+    """Stream LLM response, yielding text chunks.
+    Uses completions API with manual prompt (Sarvam-2B is a base model with no chat template).
+    """
+    import httpx
+    from mac.config import settings
+
+    prompt = _messages_to_prompt(messages)
+    resolved = "sarvamai/sarvam-2b-v0.5"
+    base_url = settings.vllm_speed_url
+
+    payload = {
+        "model": resolved,
+        "prompt": prompt,
+        "temperature": 0.35,
+        "max_tokens": 120,
+        "stream": True,
+        "stop": ["User:", "\nUser:", "\n\nUser:", "Phone:", "Contact:"],
+        "repetition_penalty": 1.15,
+    }
+
+    async with httpx.AsyncClient(timeout=120) as client:
+        try:
+            async with client.stream(
+                "POST", f"{base_url}/v1/completions", json=payload
+            ) as resp:
+                if resp.status_code != 200:
+                    return
+                async for line in resp.aiter_lines():
+                    if not line or not line.startswith("data: "):
+                        continue
+                    text = line[6:].strip()
+                    if not text or text == "[DONE]":
+                        continue
+                    try:
+                        data = json.loads(text)
+                        content = data.get("choices", [{}])[0].get("text", "")
+                        if _PHONE_GARBAGE_RE.fullmatch(content.strip()):
+                            continue
+                        if content:
+                            yield content
+                    except Exception:
+                        pass
+        except Exception:
+            pass
 
 
 async def _tts(text: str, language: str = "en") -> bytes | None:
-    """Convert text to speech. Returns audio bytes or None if TTS unavailable."""
-    voice = "hi_IN" if language in ("hi", "hin") else "en_IN"
+    """Convert text to speech via Veena TTS. Returns WAV bytes or None."""
+    # kavya: female, Hindi+English (default)  |  agastya: male, Hindi+English
+    voice = "kavya" if language in ("hi", "hin") else "kavya"
     try:
         return await llm_service.text_to_speech(
             text=text,
             voice=voice,
             speed=1.0,
-            response_format="mp3",
+            response_format="wav",
         )
     except Exception:
         return None
@@ -134,7 +201,7 @@ async def voice_stream(
     # Feature gate (admin always passes)
     if user.role != "admin":
         from mac.services.feature_flag_service import is_enabled
-        if not await is_enabled(db, "model_voice", user.role):
+        if not await is_enabled(db, "voice_input", user.role):
             await websocket.send_json({"type": "error", "message": "Voice chat is disabled by admin"})
             await websocket.close(code=4003)
             return
@@ -147,7 +214,14 @@ async def voice_stream(
 
     async def _process_audio():
         nonlocal audio_buffer, processing
-        if not audio_buffer or processing:
+        if processing:
+            return
+        if not audio_buffer:
+            await websocket.send_json({
+                "type": "info",
+                "state": "listening",
+                "message": "I did not catch any speech. Please speak again.",
+            })
             return
         processing = True
         buf_copy = bytes(audio_buffer)
@@ -160,6 +234,12 @@ async def voice_stream(
             lang = stt.get("language", "en")
 
             if not text:
+                await websocket.send_json({
+                    "type": "info",
+                    "state": "listening",
+                    "message": "I could not hear that clearly. Please try again.",
+                })
+                await websocket.send_json({"type": "done"})
                 processing = False
                 return
 
@@ -174,7 +254,7 @@ async def voice_stream(
             # 3. Stream LLM response, accumulate sentences for TTS
             full_response = ""
             sentence_buf = ""
-            model = "qwen2.5:7b"
+            model = _VOICE_MODEL
 
             async for chunk in _llm_stream(conversation, model):
                 full_response += chunk
@@ -191,7 +271,7 @@ async def voice_stream(
                             await websocket.send_json({
                                 "type": "audio_chunk",
                                 "data": base64.b64encode(audio).decode(),
-                                "mime": "audio/mpeg",
+                                "mime": "audio/wav",
                             })
 
             # TTS for any remaining text
@@ -201,7 +281,18 @@ async def voice_stream(
                     await websocket.send_json({
                         "type": "audio_chunk",
                         "data": base64.b64encode(audio).decode(),
-                        "mime": "audio/mpeg",
+                        "mime": "audio/wav",
+                    })
+
+            if not full_response.strip():
+                full_response = "I heard you, but I could not generate a clear response. Please try again."
+                await websocket.send_json({"type": "llm_chunk", "text": full_response})
+                audio = await _tts(full_response, lang)
+                if audio:
+                    await websocket.send_json({
+                        "type": "audio_chunk",
+                        "data": base64.b64encode(audio).decode(),
+                        "mime": "audio/wav",
                     })
 
             if full_response:
