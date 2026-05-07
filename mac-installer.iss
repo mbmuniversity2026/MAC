@@ -39,8 +39,6 @@ ArchitecturesInstallIn64BitMode=x64compatible
 ; ── Branding ──
 SetupIconFile=mac-logo.ico
 UninstallDisplayIcon={app}\mac-logo.ico
-WizardImageFile=wizard_large.bmp
-WizardSmallImageFile=wizard_small.bmp
 WizardImageStretch=no
 AppVerName=MAC v{#AppVersion} — MBM AI Cloud
 
@@ -63,12 +61,9 @@ Name: "installcert"; Description: "Install SSL certificate so Chrome trusts HTTP
 
 [Files]
 ; ── Shared files ──
-Source: "mac-logo.ico"; DestDir: "{app}"; Flags: ignoreversion
-Source: "logo.png"; DestDir: "{app}"; Flags: ignoreversion
-Source: "logo_256.bmp"; DestDir: "{app}"; Flags: ignoreversion
+Source: "mac-logo.ico"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "logo.png"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 Source: "logo_256.png"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
-Source: "wizard_large.bmp"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
-Source: "wizard_small.bmp"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 
 ; ── HOST files ──
 Source: "docker-compose.yml"; DestDir: "{app}"; Flags: ignoreversion; Components: host
@@ -77,7 +72,7 @@ Source: ".env.example"; DestDir: "{app}"; DestName: ".env"; Flags: ignoreversion
 Source: "requirements.txt"; DestDir: "{app}"; Flags: ignoreversion; Components: host
 Source: "start-mac.bat"; DestDir: "{app}"; Flags: ignoreversion; Components: host
 Source: "stop-mac.bat"; DestDir: "{app}"; Flags: ignoreversion; Components: host
-Source: "download-models.bat"; DestDir: "{app}"; Flags: ignoreversion; Components: host
+Source: "download-models.bat"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist; Components: host
 Source: "mac\*"; DestDir: "{app}\mac"; Flags: ignoreversion recursesubdirs; Components: host
 Source: "frontend\*"; DestDir: "{app}\frontend"; Flags: ignoreversion recursesubdirs; Components: host
 Source: "nginx\*"; DestDir: "{app}\nginx"; Flags: ignoreversion recursesubdirs; Components: host
@@ -88,9 +83,8 @@ Source: "veena_tts\*"; DestDir: "{app}\veena_tts"; Flags: ignoreversion recurses
 ; ── WORKER files ──
 Source: "docker-compose.worker.yml"; DestDir: "{app}"; Flags: ignoreversion; Components: worker
 Source: "worker_agent.py"; DestDir: "{app}"; Flags: ignoreversion; Components: worker
-Source: "worker_launcher.py"; DestDir: "{app}"; Flags: ignoreversion; Components: worker
-Source: "dist\worker.exe"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist; Components: worker
-Source: "start-mac-worker.bat"; DestDir: "{app}"; Flags: ignoreversion; Components: worker
+Source: "setup-worker.bat"; DestDir: "{app}"; Flags: ignoreversion; Components: worker
+Source: "start-mac-worker.bat"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist; Components: worker
 
 [Icons]
 ; Host shortcuts
