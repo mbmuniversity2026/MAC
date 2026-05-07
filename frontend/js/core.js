@@ -67,6 +67,7 @@ function _applyFeatureGate() {
     attendance: 'attendance',
     copycheck:  'copy_check',
     fileshare:  'file_sharing',
+    tests:      'tests',
   };
   document.querySelectorAll('.sidebar-nav a[data-page]').forEach(a => {
     const flag = GATE_MAP[a.dataset.page];
@@ -301,6 +302,10 @@ function render() {
   else if (state.page === 'fileshare') {
     if (!flagOn('file_sharing')) { navigate('dashboard'); return; }
     renderFileShare();
+  }
+  else if (state.page === 'tests') {
+    if (!flagOn('tests')) { navigate('dashboard'); return; }
+    renderTests();
   }
   else { state.page = 'dashboard'; renderDashboard(); _dashRefreshIv = setInterval(() => { if (state.page === 'dashboard') renderDashboard(); }, 30000); }
 }

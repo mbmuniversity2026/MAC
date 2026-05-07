@@ -1,5 +1,9 @@
 FROM python:3.11-slim
 
+LABEL org.opencontainers.image.source=https://github.com/mbmuniversity2026/MAC
+LABEL org.opencontainers.image.description="MAC — MBM AI Cloud · Self-hosted AI for MBM University"
+LABEL org.opencontainers.image.licenses="MIT"
+
 WORKDIR /app
 
 # Install system deps

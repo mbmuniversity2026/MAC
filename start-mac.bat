@@ -191,6 +191,22 @@ echo    Faculty: raj.cse@mbm.ac.in     / Faculty@1234
 echo    Student: 21CS045               / Student@1234
 echo.
 
+REM ── Step 11: Cloudflare Tunnel (optional — internet API access) ─────────────
+where cloudflared >nul 2>&1
+if not errorlevel 1 (
+    echo  Starting Cloudflare Tunnel for internet API access...
+    start "Cloudflare Tunnel" /min cmd /c "cloudflared tunnel --url http://localhost:80 2>&1 | findstr /i trycloudflare"
+    timeout /t 3 /nobreak >nul
+    echo  [OK] Cloudflare Tunnel running.
+    echo       API keys work over internet once tunnel URL is configured.
+    echo       Check the Cloudflare Tunnel window for the public URL.
+) else (
+    echo  [INFO] Cloudflare Tunnel not installed.
+    echo         For internet API access: winget install Cloudflare.cloudflared
+    echo         Then restart start-mac.bat
+)
+echo.
+
 REM ── Open browser ──────────────────────────────────────────────────────────────
 if not "!LOCAL_IP!"=="127.0.0.1" (
     start https://!LOCAL_IP!

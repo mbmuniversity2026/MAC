@@ -149,6 +149,9 @@ function renderChat() {
             <div class="chat-input-actions">
               <div class="chat-input-left">
                 <select id="model-select" class="model-pill"><option value="auto" selected>Auto</option></select>
+                <button class="chat-btn-icon" id="web-search-btn" title="Web search (SearXNG) — toggle real-time search context" aria-pressed="false">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                </button>
                 <button class="chat-btn-icon" id="attach-btn" title="Attach document (PDF, TXT, DOCX) for RAG context">
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
                 </button>
@@ -197,6 +200,18 @@ function bindChat() {
   input.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } };
   input.oninput = () => { input.style.height = 'auto'; input.style.height = Math.min(input.scrollHeight, 120) + 'px'; };
 
+  // Web search toggle (SearXNG real-time)
+  const wsBtn = document.getElementById('web-search-btn');
+  if (wsBtn) {
+    wsBtn.onclick = () => {
+      _webSearchEnabled = !_webSearchEnabled;
+      wsBtn.style.color = _webSearchEnabled ? 'var(--accent)' : '';
+      wsBtn.style.background = _webSearchEnabled ? 'var(--accent-dim, rgba(212,132,74,.15))' : '';
+      wsBtn.setAttribute('aria-pressed', _webSearchEnabled);
+      wsBtn.title = _webSearchEnabled ? 'Web search ON — click to disable' : 'Web search (SearXNG) — toggle real-time search context';
+    };
+  }
+
   // Attach file: PDF/TXT/DOCX for RAG context injection
   let _attachedFile = null;
   const attachBtn = document.getElementById('attach-btn');
@@ -226,15 +241,17 @@ function bindChat() {
           body: fd,
         });
         if (!res.ok) throw new Error('Upload failed');
-        if (status) status.textContent = 'File ready';
-        setTimeout(() => { const s = document.getElementById('chat-status'); if (s) s.textContent = ''; }, 2000);
+        _chatRagCollection = 'chat-context';
+        if (status) status.textContent = 'File ready — will be used as context';
+        setTimeout(() => { const s = document.getElementById('chat-status'); if (s) s.textContent = ''; }, 2500);
       } catch {
+        _chatRagCollection = null;
         if (status) status.textContent = 'Upload failed';
         setTimeout(() => { const s = document.getElementById('chat-status'); if (s) s.textContent = ''; }, 3000);
       }
     };
     // Allow dismissing attachment
-    attachName.onclick = () => { _attachedFile = null; attachName.style.display = 'none'; attachName.textContent = ''; };
+    attachName.onclick = () => { _attachedFile = null; _chatRagCollection = null; attachName.style.display = 'none'; attachName.textContent = ''; };
   }
 
   // STT: upload audio file &rarr; transcribe via Whisper
@@ -343,7 +360,10 @@ function bindChat() {
   if (voiceBtn) voiceBtn.onclick = openVoiceChat;
 }
 
-let _modelDisplayMap = {}; // model-id → served_name for badge display
+let _modelDisplayMap = {};
+let _webSearchEnabled = false;
+let _webSearchContext = null;
+let _chatRagCollection = null; // set when a doc is attached for RAG context
 
 async function loadModelOptions() {
   const sel = document.getElementById('model-select');
@@ -449,11 +469,58 @@ async function sendMessage() {
   startMacThinking(assistantDiv);
 
   const status = document.getElementById('chat-status');
-  status.textContent = 'Generating...';
   isStreaming = true;
+
+  // ── Web search context injection (SearXNG) ───────────────
+  let _webSources = [];
+  if (_webSearchEnabled) {
+    try {
+      status.textContent = 'Searching web...';
+      const searchRes = await api('/search/web', { method: 'POST', body: JSON.stringify({ query: text, num_results: 5 }) });
+      if (searchRes.ok) {
+        const searchData = await searchRes.json();
+        _webSources = searchData.results || [];
+        if (_webSources.length > 0) {
+          const ctx = _webSources.map((r, i) =>
+            `[${i + 1}] ${r.title}\nURL: ${r.url}\n${r.snippet || r.content || ''}`
+          ).join('\n\n');
+          // Inject as system context that will prepend this conversation
+          _webSearchContext = `You have access to the following real-time web search results for the user's query. Use them to give an accurate, up-to-date answer. Cite sources with [1], [2] etc.\n\n${ctx}`;
+        }
+      }
+    } catch (_) { /* search failure is non-fatal */ }
+  } else {
+    _webSearchContext = null;
+  }
+
+  // ── RAG document context injection ──────────────────────
+  let _ragSources = [];
+  if (_chatRagCollection) {
+    try {
+      status.textContent = 'Reading document...';
+      const ragRes = await api('/rag/query', { method: 'POST', body: JSON.stringify({ question: text, collection: _chatRagCollection, top_k: 5, include_sources: true, model: 'auto' }) });
+      if (ragRes.ok) {
+        const ragData = await ragRes.json();
+        _ragSources = ragData.sources || [];
+        if (_ragSources.length > 0) {
+          const ragCtx = _ragSources.map((s, i) =>
+            `[Doc ${i + 1}: ${s.document_title || 'Uploaded document'}]\n${s.chunk_text}`
+          ).join('\n\n');
+          const existing = _webSearchContext || '';
+          _webSearchContext = (existing ? existing + '\n\n' : '') +
+            `The user has uploaded a document. Relevant sections:\n\n${ragCtx}`;
+        }
+      }
+    } catch (_) { /* non-fatal */ }
+  }
+
+  status.textContent = 'Generating...';
 
   try {
     const apiMessages = currentSession.messages.map(m => ({ role: m.role, content: m.content }));
+    if (_webSearchContext) {
+      apiMessages.unshift({ role: 'system', content: _webSearchContext });
+    }
     const res = await api('/query/chat', { method: 'POST', body: JSON.stringify({ messages: apiMessages, model, stream: true }) });
     if (!res.ok) { const err = await res.json(); throw new Error(err.detail?.message || 'Request failed'); }
 
@@ -494,7 +561,10 @@ async function sendMessage() {
       const usedModel = shortModel(_streamedModel || (model !== 'auto' ? model : 'MAC'));
       const msgIdx = currentSession.messages.length - 1;
       assistantDiv.dataset.msgIndex = msgIdx;
-      assistantDiv.innerHTML = formatMd(fullContent) + `<div class="msg-meta"><div class="msg-model-tag">answered by ${esc(usedModel)}</div><button class="tts-btn" title="Listen to this response"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg></button></div>`;
+      const sourcesHtml = (_webSources && _webSources.length > 0)
+        ? `<div class="msg-sources"><span class="msg-sources-label"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg> Web sources</span>${_webSources.map((r, i) => `<a class="msg-source-chip" href="${esc(r.url)}" target="_blank" rel="noopener" title="${esc(r.url)}">[${i+1}] ${esc((r.title||r.url).slice(0,40))}</a>`).join('')}</div>`
+        : '';
+      assistantDiv.innerHTML = formatMd(fullContent) + sourcesHtml + `<div class="msg-meta"><div class="msg-model-tag">answered by ${esc(usedModel)}</div><button class="tts-btn" title="Listen to this response"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg></button></div>`;
     } else if (streamError) {
       throw streamError;
     } else {

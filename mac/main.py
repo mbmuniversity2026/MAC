@@ -25,6 +25,8 @@ from mac.routers import (
     # ── New features ──
     voice_chat, video, thumbnail, activity, terminal,
     join,
+    # ── Tests / Exams ──
+    tests as tests_router,
 )
 from mac.routers import setup as setup_router  # avoid shadowing the `setup` name
 
@@ -56,6 +58,7 @@ async def lifespan(app: FastAPI):
     import mac.models.system_config  # noqa: F401
     # ── New models ──
     import mac.models.video  # noqa: F401 (VideoProject, VideoJob)
+    import mac.models.test_exam  # noqa: F401 (TestExam, TestQuestion, TestOption, TestSubmission, StudentAnswer)
 
     # Create tables (dev only — production uses Alembic)
     if settings.is_dev:
@@ -163,6 +166,7 @@ app.include_router(thumbnail.router, prefix="/api/v1")
 app.include_router(activity.router, prefix="/api/v1")
 app.include_router(terminal.router)
 app.include_router(join.router, prefix="/api/v1")
+app.include_router(tests_router.router, prefix="/api/v1")
 
 # Serve vanilla JS frontend static files
 if FRONTEND_DIR.exists():

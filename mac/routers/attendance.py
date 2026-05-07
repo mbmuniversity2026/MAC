@@ -199,11 +199,15 @@ async def register_face(
 
 @router.get("/face-status")
 async def face_status(
+    user_id: str | None = None,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Check if current user has a registered face template."""
-    template = await attendance_service.get_face_template(db, user.id)
+    """Check face registration status. Admin/faculty can pass ?user_id= for any user."""
+    target_id = user.id
+    if user_id and user.role in ("admin", "faculty"):
+        target_id = user_id
+    template = await attendance_service.get_face_template(db, target_id)
     return {
         "registered": template is not None,
         "captured_at": template.captured_at.isoformat() if template else None,

@@ -38,6 +38,7 @@ DEFAULT_FLAGS: list[tuple[str, str, str, list[str]]] = [
     ("model_video_gen",  "Video Generation",     "AI video generation models.",     ["student", "faculty", "admin"]),
     ("model_voice",      "Voice Chat",           "Whisper + TTS voice pipeline.",   ["student", "faculty", "admin"]),
     ("model_thumbnail",  "Thumbnail Generator",  "AI-assisted thumbnail creator.",  ["student", "faculty", "admin"]),
+    ("tests",            "Tests & Exams",        "Test taking and exam management.", ["student", "faculty", "admin"]),
 ]
 
 

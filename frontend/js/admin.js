@@ -58,6 +58,14 @@ async function renderAdmin() {
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
         <span>Terminal</span>
       </div>
+      <div class="admin-tab ${adminTab==='knowledge'?'active':''}" data-tab="knowledge">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+        <span>Knowledge Base</span>
+      </div>
+      <div class="admin-tab ${adminTab==='faces'?'active':''}" data-tab="faces">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M3 20c0-4.418 4.03-8 9-8s9 3.582 9 8"/></svg>
+        <span>Face Registry</span>
+      </div>
     </div>
     <div id="admin-content"><div class="loading-state"><div class="spinner"></div><span>Loading...</span></div></div>
   `;
@@ -81,6 +89,8 @@ async function renderAdmin() {
   else if (adminTab === 'activity') await renderAdminActivityStream();
   else if (adminTab === 'video_studio') await renderVideoStudio();
   else if (adminTab === 'terminal') await renderAdminTerminal();
+  else if (adminTab === 'knowledge') await renderAdminKnowledge();
+  else if (adminTab === 'faces') await renderAdminFaces();
 }
 
 async function renderAdminOverview() {
@@ -1028,3 +1038,99 @@ async function _vsRunCommand(projectId, command, description) {
 /*
    ADMIN "" Cluster / Nodes Management
     */
+
+/* ── Knowledge Base ────────────────────────────────────── */
+async function renderAdminKnowledge() {
+  const el = document.getElementById('admin-content');
+  el.innerHTML = '<div class="loading-state"><div class="spinner"></div><span>Loading knowledge base...</span></div>';
+  try {
+    const docs = await apiJson('/rag/documents');
+    const colls = await apiJson('/rag/collections');
+    el.innerHTML = `
+      <div style="padding:20px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
+          <div>
+            <h2 style="margin:0;font-size:1.1rem">Knowledge Base</h2>
+            <p style="margin:4px 0 0;color:var(--muted);font-size:.82rem">${docs.total || 0} document(s) · ${colls.total || 0} collection(s)</p>
+          </div>
+        </div>
+        <div style="display:grid;gap:10px">
+          ${(docs.documents || []).length === 0
+            ? '<div class="empty-state"><p>No documents uploaded yet. Use the Chat page to attach documents via the paperclip button.</p></div>'
+            : (docs.documents || []).map(d => `
+              <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 18px;display:flex;align-items:center;gap:14px">
+                <div style="width:36px;height:36px;border-radius:8px;background:var(--accent-dim,rgba(212,132,74,.15));display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                </div>
+                <div style="flex:1;min-width:0">
+                  <div style="font-weight:600;font-size:.9rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(d.title)}</div>
+                  <div style="font-size:.75rem;color:var(--muted);margin-top:2px">${esc(d.filename)} · ${d.chunk_count || 0} chunks · ${d.status === 'ready' ? '<span style="color:var(--success)">✓ Ready</span>' : esc(d.status)}</div>
+                </div>
+                <div style="font-size:.72rem;color:var(--muted);white-space:nowrap">${d.created_at ? new Date(d.created_at).toLocaleDateString() : ''}</div>
+                <button class="btn btn-sm btn-outline" style="flex-shrink:0;color:var(--danger)" onclick="_adminDeleteDoc('${esc(d.id)}')">Delete</button>
+              </div>`).join('')
+          }
+        </div>
+      </div>`;
+  } catch (e) {
+    el.innerHTML = `<div class="error-state"><p>Failed to load knowledge base: ${esc(e.message)}</p></div>`;
+  }
+}
+async function _adminDeleteDoc(id) {
+  if (!confirm('Delete this document from the knowledge base?')) return;
+  try {
+    await api('/rag/documents/' + id, { method: 'DELETE' });
+    await renderAdminKnowledge();
+    showToast('Document deleted', 'success');
+  } catch (e) { showToast('Delete failed: ' + e.message, 'error'); }
+}
+
+/* ── Face Registry ─────────────────────────────────────── */
+async function renderAdminFaces() {
+  const el = document.getElementById('admin-content');
+  el.innerHTML = '<div class="loading-state"><div class="spinner"></div><span>Loading face registry...</span></div>';
+  try {
+    const users = await apiJson('/users?per_page=200');
+    const faceChecks = await Promise.allSettled(
+      (users.users || []).map(u => apiJson('/attendance/face-status?user_id=' + u.id).catch(() => ({ registered: false })))
+    );
+    const userData = (users.users || []).map((u, i) => ({
+      ...u,
+      faceRegistered: faceChecks[i].status === 'fulfilled' ? faceChecks[i].value.registered : false,
+      faceCapturedAt: faceChecks[i].status === 'fulfilled' ? faceChecks[i].value.captured_at : null,
+    }));
+    const registered = userData.filter(u => u.faceRegistered);
+    const unregistered = userData.filter(u => !u.faceRegistered && u.role === 'student');
+    el.innerHTML = `
+      <div style="padding:20px">
+        <h2 style="margin:0 0 4px;font-size:1.1rem">Face Registry</h2>
+        <p style="margin:0 0 18px;color:var(--muted);font-size:.82rem">${registered.length} registered · ${unregistered.length} students without face</p>
+        <h3 style="font-size:.85rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 10px">Registered</h3>
+        <div style="display:grid;gap:8px;margin-bottom:20px">
+          ${registered.length === 0 ? '<div class="empty-state" style="padding:14px"><p>No faces registered yet.</p></div>' : registered.map(u => `
+            <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 16px;display:flex;align-items:center;gap:12px">
+              <div style="width:32px;height:32px;border-radius:50%;background:var(--success);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:.85rem;flex-shrink:0">${(u.name||'?')[0].toUpperCase()}</div>
+              <div style="flex:1">
+                <div style="font-weight:600;font-size:.88rem">${esc(u.name||'')} <span class="badge badge-${u.role}">${esc(u.role)}</span></div>
+                <div style="font-size:.72rem;color:var(--muted)">${esc(u.roll_number||u.email||'')} ${u.faceCapturedAt ? '· Registered ' + new Date(u.faceCapturedAt).toLocaleDateString() : ''}</div>
+              </div>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--success)" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            </div>`).join('')}
+        </div>
+        <h3 style="font-size:.85rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 10px">Students without face registration</h3>
+        <div style="display:grid;gap:8px">
+          ${unregistered.length === 0 ? '<div style="color:var(--muted);font-size:.85rem;padding:10px">All students have registered faces.</div>' : unregistered.map(u => `
+            <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 16px;display:flex;align-items:center;gap:12px;opacity:.8">
+              <div style="width:32px;height:32px;border-radius:50%;background:var(--hover);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.85rem;flex-shrink:0">${(u.name||'?')[0].toUpperCase()}</div>
+              <div style="flex:1">
+                <div style="font-weight:600;font-size:.88rem">${esc(u.name||'')}</div>
+                <div style="font-size:.72rem;color:var(--muted)">${esc(u.roll_number||u.email||'')}</div>
+              </div>
+              <span style="font-size:.72rem;color:var(--muted)">Not registered</span>
+            </div>`).join('')}
+        </div>
+      </div>`;
+  } catch (e) {
+    el.innerHTML = `<div class="error-state"><p>Failed to load face registry: ${esc(e.message)}</p></div>`;
+  }
+}
