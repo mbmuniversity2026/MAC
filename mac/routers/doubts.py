@@ -150,10 +150,11 @@ async def reply_to_doubt(
     # Notify the student
     doubt = await doubt_service.get_doubt(db, doubt_id)
     if doubt:
+        role_label = "Admin" if user.role == "admin" else "Faculty"
         await notification_service.create_notification(
             db, user_id=doubt.student_id,
             title="Reply to Your Doubt",
-            body=f"A faculty member replied: {req.body[:100]}...",
+            body=f"{user.name} ({role_label}) replied: {req.body[:120]}",
             category="doubt_reply",
             link=f"#doubts/{doubt_id}",
         )

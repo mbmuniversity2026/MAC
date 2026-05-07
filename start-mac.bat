@@ -14,7 +14,7 @@ echo     \_______/
 echo      ^|^| ^|^|
 echo  ===================================================
 echo   MAC — MBM AI Cloud  ^|  Starting services...
-echo   Voice Pipeline: Whisper -^> Sarvam-2B -^> Veena TTS
+echo   Voice Pipeline: Whisper -^> Qwen2.5-7B -^> Veena TTS
 echo  ===================================================
 echo.
 
@@ -110,7 +110,7 @@ if not errorlevel 1 (
     set /p GPU_NAME=<"%TEMP%\mac_gpu.tmp"
     del "%TEMP%\mac_gpu.tmp" >nul 2>&1
     echo  [OK] NVIDIA GPU: !GPU_NAME!
-    echo       Starting Sarvam-2B (voice LLM) + Veena TTS on GPU.
+    echo       Starting Qwen2.5-7B-AWQ (voice/chat LLM) + Veena TTS on GPU.
     set "GPU_PROFILE=--profile gpu"
 ) else (
     del "%TEMP%\mac_gpu.tmp" >nul 2>&1
@@ -171,16 +171,17 @@ echo   APP  (HTTP):  http://!LOCAL_IP!
 echo   APP  (local): http://localhost
 echo.
 echo   Voice Pipeline:
-echo     Whisper STT : http://localhost:8005
-echo     Sarvam-2B   : http://localhost:8001  (GPU)
-echo     Veena TTS   : http://localhost:8006  (kavya/agastya voices)
+echo     Whisper STT  : http://localhost:8005
+echo     Qwen2.5-7B   : http://localhost:8001  (GPU, AWQ)
+echo     Veena TTS    : http://localhost:8006  (kavya/agastya voices)
 echo.
 echo   API docs  : http://localhost:8000/docs
 echo   pgAdmin   : http://localhost:5051
 echo   SearXNG   : http://localhost:8888
 echo.
-echo   Worker join: http://!LOCAL_IP!/join
-echo   CA cert    : http://!LOCAL_IP!/install-cert
+echo   Worker join  : http://!LOCAL_IP!/join
+echo   Worker script: http://!LOCAL_IP!/api/v1/cluster/join/bat
+echo   CA cert      : http://!LOCAL_IP!/install-cert
 echo  ===================================================
 echo.
 
@@ -189,15 +190,24 @@ echo    Admin:   abhisek.cse@mbm.ac.in / Admin@1234
 echo    Faculty: raj.cse@mbm.ac.in     / Faculty@1234
 echo    Student: 21CS045               / Student@1234
 echo.
-echo  Voice Chat: Log in → click the mic icon in AI Chat
-echo  NOTE: Sarvam-2B + Veena weights download on first start (~4-6 GB).
-echo        Voice chat will work once both containers show "running".
-echo.
 
-echo  Press any key to open MAC in your browser...
-pause >nul
+REM ── Open browser ──────────────────────────────────────────────────────────────
 if not "!LOCAL_IP!"=="127.0.0.1" (
     start https://!LOCAL_IP!
 ) else (
     start http://localhost
 )
+
+REM ── Live log tail — stays open so you can see errors ─────────────────────────
+echo  ===================================================
+echo   Showing live logs. Press Ctrl+C to stop watching.
+echo   Containers keep running in background after Ctrl+C.
+echo  ===================================================
+echo.
+docker compose logs -f --tail=30 --no-color 2>nul
+echo.
+echo  MAC containers are still running in the background.
+echo  To stop:   stop-mac.bat
+echo  To check:  docker compose ps
+echo.
+pause

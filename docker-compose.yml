@@ -2,10 +2,10 @@
 #  MAC — MBM AI Cloud  |  Host Server  (RTX 3060 12 GB)
 # ═══════════════════════════════════════════════════════════
 #  GPU budget (12 GB):
-#    Sarvam-2B  (voice / chat LLM)  ≈ 4 GB   — always-on
-#    Veena TTS  (3B, 4-bit)         ≈ 2 GB   — always-on
-#    Whisper STT (CPU)              ≈ 0 GB VRAM
-#    Headroom / OS                  ≈ 6 GB   ✓
+#    Qwen2.5-7B-AWQ  (voice / chat LLM)  ≈ 5 GB   — vllm 0.85 util, ctx 2048, awq_marlin
+#    Veena TTS  (3B, 4-bit)              ≈ 2 GB   — always-on
+#    Whisper STT (CPU)                   ≈ 0 GB VRAM
+#    Headroom / OS                       ≈ 5 GB   ✓
 #
 #  Start:   start-mac.bat   (auto-detects GPU → adds --profile gpu)
 #  Stop:    stop-mac.bat
@@ -33,8 +33,8 @@ services:
       - EMBEDDING_URL=http://vllm-speed:8001
       - QDRANT_URL=http://qdrant:6333
       - SEARXNG_URL=http://searxng:8080
-      - MAC_ENABLED_MODELS=sarvam:2b,qwen2.5:7b,whisper-small,veena-tts
-      - MAC_AUTO_FALLBACK=sarvam:2b
+      - MAC_ENABLED_MODELS=qwen2.5:7b,whisper-small,veena-tts
+      - MAC_AUTO_FALLBACK=qwen2.5:7b
     depends_on:
       postgres:
         condition: service_healthy
@@ -77,14 +77,15 @@ services:
     volumes:
       - hf-cache:/root/.cache/huggingface
     command: >
-      --model ${VLLM_SPEED_MODEL:-sarvamai/sarvam-2b-v0.5}
+      --model ${VLLM_SPEED_MODEL:-Qwen/Qwen2.5-7B-Instruct-AWQ}
       --port ${VLLM_SPEED_PORT:-8001}
-      --gpu-memory-utilization 0.55
+      --gpu-memory-utilization 0.85
       --max-model-len 4096
       --trust-remote-code
       --enforce-eager
       --dtype auto
-      --served-model-name sarvamai/sarvam-2b-v0.5
+      --quantization awq_marlin
+      --served-model-name Qwen/Qwen2.5-7B-Instruct-AWQ
     deploy:
       resources:
         reservations:

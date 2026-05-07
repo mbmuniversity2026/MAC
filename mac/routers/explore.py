@@ -1,7 +1,10 @@
 """Explore endpoints — /explore — public discovery API."""
 
 import time
+from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Query, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+from mac.database import get_db
 from mac.schemas.explore import (
     ModelInfo, ModelDetail, ModelsListResponse,
     EndpointInfo, EndpointsResponse,
@@ -15,6 +18,23 @@ from mac.models.user import User
 router = APIRouter(prefix="/explore", tags=["Explore"])
 
 _START_TIME = time.time()
+_WORKER_STALE_S = 45  # heartbeat timeout
+
+
+def _worker_stale(dt: datetime | None) -> bool:
+    if not dt:
+        return True
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - dt).total_seconds() > _WORKER_STALE_S
+
+
+def _short_name(hf_path: str) -> str:
+    """'Qwen/Qwen2.5-Coder-7B-Instruct' → 'Qwen2.5-Coder-7B'"""
+    name = hf_path.split("/")[-1]
+    for suffix in ("-Instruct", "-Chat", "-v0.5", "-v0.1"):
+        name = name.replace(suffix, "")
+    return name
 
 
 @router.get("/models", response_model=ModelsListResponse)
@@ -24,8 +44,9 @@ async def list_models(
     model_type: str = Query("all", description="Filter: chat, stt, tts, embedding, vision"),
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
 ):
-    """List all available models from registry."""
+    """List all available models from registry + live cluster workers."""
     models = []
     for model_id, info in DEFAULT_MODELS.items():
         mt = info.get("model_type", "chat")
@@ -48,6 +69,43 @@ async def list_models(
             status="loaded",
             capabilities=info.get("capabilities", []),
         ))
+
+    # Append live worker-cluster models (active nodes, ready deployments, fresh heartbeat)
+    if model_type in ("all", "chat"):
+        try:
+            from sqlalchemy import select
+            from mac.models.node import WorkerNode, NodeModelDeployment
+
+            stmt = (
+                select(WorkerNode, NodeModelDeployment)
+                .join(NodeModelDeployment, NodeModelDeployment.node_id == WorkerNode.id)
+                .where(
+                    WorkerNode.status == "active",
+                    NodeModelDeployment.status == "ready",
+                )
+            )
+            rows = (await db.execute(stmt)).all()
+            existing_ids = {m.id for m in models}
+            for node, dep in rows:
+                if _worker_stale(node.last_heartbeat):
+                    continue
+                if dep.model_id in existing_ids:
+                    continue
+                existing_ids.add(dep.model_id)
+                gpu_label = f"{node.gpu_name} · {node.gpu_vram_mb // 1024}GB" if node.gpu_vram_mb else node.gpu_name or "GPU"
+                models.append(ModelInfo(
+                    id=dep.model_id,
+                    name=dep.model_name or _short_name(dep.model_id),
+                    model_type="chat",
+                    specialty=f"Worker: {node.name}",
+                    parameters="",
+                    context_length=dep.max_model_len or 4096,
+                    status="loaded",
+                    capabilities=["chat"],
+                    node_name=node.name,
+                ))
+        except Exception:
+            pass  # DB unavailable — skip cluster models
 
     total = len(models)
     start = (page - 1) * per_page

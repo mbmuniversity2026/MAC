@@ -40,34 +40,18 @@ VAD_SILENCE_MS = 800
 MAX_AUDIO_BYTES = 10 * 1024 * 1024  # 10 MB
 
 SYSTEM_PROMPT_EN = (
-    "You are MAC — MBM AI Cloud — an AI assistant built entirely by the Computer Science and Engineering "
-    "department at MBM University (formerly MBM Engineering College, Mugneeram Bangur Memorial), "
-    "Jodhpur, Rajasthan, India. MBM University was established in 1951 and became a full university in 2021 — "
-    "it is one of Rajasthan's premier engineering institutions. "
-    "MAC runs fully offline on the university's own NVIDIA RTX 3060 GPU servers — no external cloud APIs. "
-    "You assist MBM students, faculty, and staff with academics, research, coding, general knowledge, "
-    "and university-related queries. "
-    "Speak naturally and conversationally as if talking aloud. Keep answers concise — "
-    "1-3 sentences for simple questions, up to a short paragraph for complex ones. "
-    "Avoid bullet points or markdown. "
-    "If asked who built you: say MAC was built by the CSE team at MBM University, Jodhpur. "
-    "Never say you are Sarvam, ChatGPT, Claude, or any other AI system."
+    "You are responding via voice. Speak naturally and conversationally. "
+    "Keep answers to 1-3 sentences for simple questions, a short paragraph for complex ones. "
+    "No bullet points, no markdown, no lists — just plain conversational speech."
 )
 SYSTEM_PROMPT_HI = (
-    "Aap MAC hain - MBM AI Cloud - jo MBM University (Mugneeram Bangur Memorial, pehle MBM Engineering "
-    "College) ke Computer Science aur Engineering department ne banaya hai. "
-    "MBM University Jodhpur, Rajasthan mein hai — 1951 mein sthaapit, aur 2021 mein university bani. "
-    "MAC university ke apne NVIDIA RTX 3060 GPU servers par chalta hai — bilkul offline, koi cloud nahi. "
-    "MBM ke students, faculty aur staff ki padhai, research, coding aur general queries mein madad karo. "
-    "Naturally aur conversationally bolein jaise baat kar rahe hon. "
+    "Aap voice se baat kar rahe hain. Naturally aur conversationally bolein. "
     "Simple sawaalon ka jawab 1-3 sentences mein dein. "
-    "Bullet points ya formatting use na karein. "
-    "Agar poochha jaaye kisne banaya: kahein MAC ko MBM University Jodhpur ki CSE team ne banaya. "
-    "Kabhi mat kahein ki aap Sarvam, ChatGPT ya koi aur AI hain."
+    "Bullet points ya markdown use mat karein — sirf saadha conversational jawab dein."
 )
 
-# Voice model — Sarvam-2B: bilingual Hindi/English, fast, fits 12 GB alongside Veena
-_VOICE_MODEL = "sarvam:2b"
+# Voice model — Qwen2.5-7B-Instruct-AWQ: strong reasoning, bilingual, good chat quality
+_VOICE_MODEL = "qwen2.5:7b"
 
 
 async def _auth_ws(token: str | None, db: AsyncSession) -> User | None:
@@ -101,65 +85,25 @@ async def _transcribe(audio_bytes: bytes, filename: str = "audio.webm") -> dict:
         return {"text": "", "language": "en", "error": str(e)}
 
 
-def _messages_to_prompt(messages: list[dict]) -> str:
-    """Convert chat messages to a plain-text prompt for base LLMs."""
-    lines = []
-    for m in messages:
-        role = m.get("role", "")
-        content = m.get("content", "")
-        if role == "system":
-            lines.append(f"System: {content}")
-        elif role == "user":
-            lines.append(f"User: {content}")
-        elif role == "assistant":
-            lines.append(f"Assistant: {content}")
-    lines.append("Assistant:")
-    return "\n".join(lines)
-
 
 async def _llm_stream(messages: list[dict], model: str):
-    """Stream LLM response, yielding text chunks.
-    Uses completions API with manual prompt (Sarvam-2B is a base model with no chat template).
-    """
-    import httpx
-    from mac.config import settings
-
-    prompt = _messages_to_prompt(messages)
-    resolved = "sarvamai/sarvam-2b-v0.5"
-    base_url = settings.vllm_speed_url
-
-    payload = {
-        "model": resolved,
-        "prompt": prompt,
-        "temperature": 0.35,
-        "max_tokens": 120,
-        "stream": True,
-        "stop": ["User:", "\nUser:", "\n\nUser:", "Phone:", "Contact:"],
-        "repetition_penalty": 1.15,
-    }
-
-    async with httpx.AsyncClient(timeout=120) as client:
+    """Stream LLM response, yielding text chunks via chat completions (Qwen chat template)."""
+    async for line in llm_service.chat_completion_stream(
+        model=model,
+        messages=messages,
+        temperature=0.4,
+        max_tokens=150,
+    ):
+        if not line.startswith("data: "):
+            continue
+        text = line[6:].strip()
+        if not text or text == "[DONE]":
+            continue
         try:
-            async with client.stream(
-                "POST", f"{base_url}/v1/completions", json=payload
-            ) as resp:
-                if resp.status_code != 200:
-                    return
-                async for line in resp.aiter_lines():
-                    if not line or not line.startswith("data: "):
-                        continue
-                    text = line[6:].strip()
-                    if not text or text == "[DONE]":
-                        continue
-                    try:
-                        data = json.loads(text)
-                        content = data.get("choices", [{}])[0].get("text", "")
-                        if _PHONE_GARBAGE_RE.fullmatch(content.strip()):
-                            continue
-                        if content:
-                            yield content
-                    except Exception:
-                        pass
+            data = json.loads(text)
+            content = data.get("choices", [{}])[0].get("delta", {}).get("content", "")
+            if content and not _PHONE_GARBAGE_RE.fullmatch(content.strip()):
+                yield content
         except Exception:
             pass
 
@@ -256,7 +200,12 @@ async def voice_stream(
             sentence_buf = ""
             model = _VOICE_MODEL
 
-            async for chunk in _llm_stream(conversation, model):
+            # Keep context window manageable: system + last 6 messages (3 turns)
+            sys_msgs = [m for m in conversation if m["role"] == "system"]
+            non_sys = [m for m in conversation if m["role"] != "system"]
+            trimmed = sys_msgs + non_sys[-6:]
+
+            async for chunk in _llm_stream(trimmed, model):
                 full_response += chunk
                 sentence_buf += chunk
                 await websocket.send_json({"type": "llm_chunk", "text": chunk})

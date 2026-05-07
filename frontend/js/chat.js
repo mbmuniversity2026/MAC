@@ -354,8 +354,10 @@ async function loadModelOptions() {
     (data.models || []).forEach(m => {
       const opt = document.createElement('option');
       opt.value = m.id;
-      opt.textContent = m.name + (m.parameters ? ' (' + m.parameters + ')' : '');
-      _modelDisplayMap[m.id] = m.served_name || m.name;
+      const workerTag = m.node_name ? ` [${m.node_name}]` : '';
+      opt.textContent = m.name + (m.parameters ? ' (' + m.parameters + ')' : '') + workerTag;
+      if (m.node_name) opt.dataset.worker = m.node_name;
+      _modelDisplayMap[m.id] = m.node_name ? `${m.name} @ ${m.node_name}` : (m.served_name || m.name);
       sel.appendChild(opt);
     });
   } catch (e) { /* API offline — auto option is enough */ }
@@ -456,6 +458,7 @@ async function sendMessage() {
     if (!res.ok) { const err = await res.json(); throw new Error(err.detail?.message || 'Request failed'); }
 
     let fullContent = '';
+    let _streamedModel = '';
     stopMacThinking(assistantDiv);
     assistantDiv.textContent = '';
     const reader = res.body.getReader();
@@ -476,6 +479,7 @@ async function sendMessage() {
           try {
             const chunk = JSON.parse(data);
             if (chunk.error) throw new Error(chunk.error.message);
+            if (chunk.model && !_streamedModel) _streamedModel = chunk.model;
             const delta = chunk.choices?.[0]?.delta?.content || '';
             if (delta) { fullContent += delta; assistantDiv.innerHTML = formatMd(fullContent); msgs.scrollTop = msgs.scrollHeight; }
           } catch (parseErr) { if (parseErr.message.includes('Backend') || parseErr.message.includes('model')) throw parseErr; }
@@ -487,7 +491,7 @@ async function sendMessage() {
     if (fullContent) {
       currentSession.messages.push({ role: 'assistant', content: fullContent });
       persistSession();
-      const usedModel = model === 'auto' ? 'Qwen2.5-7B-AWQ' : shortModel(model);
+      const usedModel = shortModel(_streamedModel || (model !== 'auto' ? model : 'MAC'));
       const msgIdx = currentSession.messages.length - 1;
       assistantDiv.dataset.msgIndex = msgIdx;
       assistantDiv.innerHTML = formatMd(fullContent) + `<div class="msg-meta"><div class="msg-model-tag">answered by ${esc(usedModel)}</div><button class="tts-btn" title="Listen to this response"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg></button></div>`;
@@ -666,6 +670,7 @@ let _voiceOrbRaf = null;
 let _voiceTurnActive = false;
 let _voiceLastSpeechAt = 0;
 let _voiceLastStopSentAt = 0;
+let _voiceOrb = null;
 
 function _voiceInjectStyles() {
   if (document.getElementById('mac-voice-styles')) return;
@@ -674,19 +679,8 @@ function _voiceInjectStyles() {
   s.textContent = `
     #mac-voice-overlay{position:fixed;inset:0;z-index:9000;background:rgba(7,5,3,.97);backdrop-filter:blur(16px);display:flex;align-items:center;justify-content:center;font-family:var(--font);color:#f0ebe6}
     #mac-voice-panel{width:100%;max-width:420px;padding:36px 24px;display:flex;flex-direction:column;align-items:center}
-    #mac-voice-orb-wrap{position:relative;width:200px;height:200px;margin-bottom:32px;display:flex;align-items:center;justify-content:center}
-    #mac-voice-orb-glow{position:absolute;inset:-24px;border-radius:50%;background:radial-gradient(ellipse at center,rgba(212,131,74,.18) 0%,transparent 68%);animation:mac-orb-glow 3s ease-in-out infinite;pointer-events:none}
-    #mac-voice-orb{width:168px;height:168px;border-radius:50%;position:relative;background:radial-gradient(ellipse at 32% 28%,#f8d09a,#d4834a 38%,#9a3e0a 72%,#3a1204 100%);box-shadow:0 0 45px 18px rgba(212,131,74,.38),0 0 90px 35px rgba(180,70,15,.18),inset 0 8px 22px rgba(255,215,155,.28);transition:box-shadow .2s;cursor:default}
-    #mac-voice-orb .orb-gloss{position:absolute;width:52%;height:40%;top:11%;left:13%;background:radial-gradient(ellipse at center,rgba(255,255,255,.38) 0%,transparent 72%);border-radius:50%;pointer-events:none}
-    #mac-voice-orb.connecting{animation:mac-orb-pulse 2s ease-in-out infinite;background:radial-gradient(ellipse at 32% 28%,#dbc88a,#a07828 42%,#5a3a10 76%,#1e0e04 100%);box-shadow:0 0 28px 10px rgba(170,120,50,.3),0 0 55px 20px rgba(120,80,20,.12),inset 0 5px 16px rgba(210,180,100,.18)}
-    #mac-voice-orb.listening{animation:mac-orb-listen 1.7s ease-in-out infinite}
-    #mac-voice-orb.processing{animation:mac-orb-think 1.1s linear infinite}
-    #mac-voice-orb.speaking{animation:mac-orb-speak 0.55s ease-in-out infinite;background:radial-gradient(ellipse at 32% 28%,#ffe4b8,#f09050 34%,#c03808 66%,#4a1000 100%);box-shadow:0 0 65px 28px rgba(240,130,60,.55),0 0 130px 55px rgba(200,70,10,.25),inset 0 8px 24px rgba(255,225,165,.38)}
-    @keyframes mac-orb-glow{0%,100%{opacity:.5;transform:scale(1)}50%{opacity:.95;transform:scale(1.18)}}
-    @keyframes mac-orb-pulse{0%,100%{transform:scale(1);opacity:.7}50%{transform:scale(1.07);opacity:1}}
-    @keyframes mac-orb-listen{0%,100%{border-radius:50%;transform:scale(1);filter:brightness(1.05)}20%{border-radius:56% 44% 52% 48%/48% 56% 44% 52%;transform:scale(1.07);filter:brightness(1.18)}40%{border-radius:44% 56% 48% 52%/52% 44% 56% 48%;transform:scale(.97);filter:brightness(1.08)}60%{border-radius:52% 48% 58% 42%/42% 54% 46% 58%;transform:scale(1.08);filter:brightness(1.2)}80%{border-radius:48% 52% 44% 56%/56% 46% 54% 44%;transform:scale(.96);filter:brightness(1.1)}}
-    @keyframes mac-orb-think{0%{filter:brightness(1.1) hue-rotate(0deg);border-radius:50%}33%{filter:brightness(1.28) hue-rotate(18deg);border-radius:55% 45% 50% 50%/50% 50% 55% 45%}66%{filter:brightness(1.15) hue-rotate(-18deg);border-radius:45% 55% 50% 50%/50% 50% 45% 55%}100%{filter:brightness(1.1) hue-rotate(0deg);border-radius:50%}}
-    @keyframes mac-orb-speak{0%,100%{transform:scale(1.03);border-radius:50%;filter:brightness(1.22)}25%{border-radius:57% 43% 50% 50%/50% 50% 60% 40%;transform:scale(1.12);filter:brightness(1.38)}75%{border-radius:43% 57% 50% 50%/50% 50% 40% 60%;transform:scale(1.07);filter:brightness(1.3)}}
+    #mac-voice-orb-wrap{position:relative;width:240px;height:240px;margin-bottom:24px;display:flex;align-items:center;justify-content:center}
+    #mac-voice-orb-canvas{width:240px;height:240px;display:block}
     #mac-voice-title{font-size:.95rem;font-weight:700;color:var(--accent,#d4834a);letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px}
     #mac-voice-status{font-size:.82rem;color:rgba(240,235,230,.52);margin-bottom:22px;min-height:1.2em;text-align:center;transition:color .3s}
     #mac-voice-status.active{color:rgba(212,131,74,.85)}
@@ -701,25 +695,27 @@ function _voiceInjectStyles() {
     #mac-voice-send:hover{background:rgba(255,255,255,.11);border-color:rgba(212,131,74,.45);transform:translateY(-1px)}
     #mac-voice-end{padding:10px 22px;border-radius:10px;border:none;background:linear-gradient(135deg,#b82020,#e03030);color:#fff;cursor:pointer;font-size:.84rem;font-weight:600;transition:opacity .2s,transform .1s;box-shadow:0 2px 14px rgba(200,30,30,.32)}
     #mac-voice-end:hover{opacity:.84;transform:translateY(-1px)}
-    #mac-voice-httpsbar{margin-top:18px;padding:10px 16px;background:rgba(212,131,74,.1);border:1px solid rgba(212,131,74,.28);border-radius:10px;font-size:.75rem;color:rgba(240,235,230,.65);text-align:center;line-height:1.55;display:none}
-    #mac-voice-httpsbar a{color:var(--accent,#d4834a);text-decoration:none}
-    #mac-voice-httpsbar a:hover{text-decoration:underline}
+    #mac-voice-micbar{margin-top:18px;padding:12px 16px;background:rgba(212,131,74,.1);border:1px solid rgba(212,131,74,.28);border-radius:10px;font-size:.75rem;color:rgba(240,235,230,.65);text-align:center;line-height:1.6;display:none}
+    #mac-voice-retry{margin-top:10px;padding:7px 20px;border-radius:8px;border:1.5px solid rgba(212,131,74,.6);background:rgba(212,131,74,.18);color:var(--accent,#d4834a);cursor:pointer;font-size:.82rem;font-weight:700;transition:background .2s,transform .1s}
+    #mac-voice-retry:hover{background:rgba(212,131,74,.32);transform:translateY(-1px)}
   `;
   document.head.appendChild(s);
 }
 
 function _voiceSetState(state, msg) {
-  const orb = document.getElementById('mac-voice-orb');
-  if (orb) {
-    orb.className = state;
-    if (state !== 'listening') orb.style.transform = '';
+  if (_voiceOrb) {
+    _voiceOrb.setState(
+      state === 'listening' ? 'listening' :
+      state === 'speaking'  ? 'speaking'  :
+                              'idle'
+    );
   }
   const labels = {
-    connecting: 'Connecting...',
-    listening: 'Listening — speak now',
-    processing: 'Thinking...',
-    speaking: 'MAC is speaking...',
-    error: 'Connection error',
+    connecting:   'Connecting...',
+    listening:    'Listening — speak now',
+    processing:   'Thinking...',
+    speaking:     'MAC is speaking...',
+    error:        'Connection error',
     disconnected: 'Disconnected',
   };
   const el = document.getElementById('mac-voice-status');
@@ -737,15 +733,11 @@ function _voiceStartOrbMic(stream) {
     analyser.fftSize = 32;
     actx.createMediaStreamSource(stream).connect(analyser);
     const data = new Uint8Array(analyser.frequencyBinCount);
-    const orb = document.getElementById('mac-voice-orb');
     function tick() {
       _voiceOrbRaf = requestAnimationFrame(tick);
       analyser.getByteFrequencyData(data);
       const avg = data.reduce((a, b) => a + b, 0) / data.length;
-      if (orb && orb.className === 'listening') {
-        const s = 1 + (avg / 255) * 0.32;
-        orb.style.transform = `scale(${s.toFixed(3)})`;
-      }
+      if (_voiceOrb) _voiceOrb.setLevel(avg / 255);
       const now = Date.now();
       const isSpeech = avg > 12;
       if (isSpeech) {
@@ -795,10 +787,7 @@ function openVoiceChat() {
   overlay.innerHTML = `
     <div id="mac-voice-panel">
       <div id="mac-voice-orb-wrap">
-        <div id="mac-voice-orb-glow"></div>
-        <div id="mac-voice-orb" class="connecting">
-          <div class="orb-gloss"></div>
-        </div>
+        <canvas id="mac-voice-orb-canvas"></canvas>
       </div>
       <div id="mac-voice-title">MAC Voice</div>
       <div id="mac-voice-status">Connecting...</div>
@@ -813,12 +802,20 @@ function openVoiceChat() {
         <button id="mac-voice-send">Send Now</button>
         <button id="mac-voice-end">End Voice Chat</button>
       </div>
-      <div id="mac-voice-httpsbar">
-        <strong style="color:var(--accent,#d4834a)">Mic is blocked by this browser context.</strong><br>
-        Open MAC with <code>launch-mac-chrome.bat</code> on this PC, or use HTTPS from a trusted browser session.
+      <div id="mac-voice-micbar">
+        <strong style="color:var(--accent,#d4834a)">Microphone access blocked.</strong><br>
+        Allow microphone in your browser's site settings, then click Retry.<br>
+        <button id="mac-voice-retry">Retry Mic</button>
       </div>
     </div>`;
   document.body.appendChild(overlay);
+
+  // init VoiceOrb on the canvas
+  const orbCanvas = document.getElementById('mac-voice-orb-canvas');
+  if (window.VoiceOrb && orbCanvas) {
+    _voiceOrb = new VoiceOrb(orbCanvas);
+    _voiceOrb.setState('idle');
+  }
 
   let muted = false;
   let accLlm = '';
@@ -861,27 +858,19 @@ function openVoiceChat() {
     _voiceTranscript.push({ role, content: text });
   }
 
-  const wsProto = location.protocol === 'https:' ? 'wss' : 'ws';
-  const wsUrl = `${wsProto}://${location.host}/api/v1/voice/stream?token=${state.token || ''}`;
-  const ws = new WebSocket(wsUrl);
-  _voiceWs = ws;
-  _voiceTurnActive = false;
-  _voiceLastSpeechAt = 0;
-  _voiceLastStopSentAt = 0;
-
-  ws.onopen = async () => {
-    ws.send(JSON.stringify({ type: 'start' }));
-
+  async function startMic(ws) {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      document.getElementById('mac-voice-httpsbar').style.display = 'block';
-      _voiceSetState('error', 'Mic unavailable in this browser session');
+      document.getElementById('mac-voice-micbar').style.display = 'block';
+      _voiceSetState('error', 'Mic unavailable — browser lacks mediaDevices API');
       return;
     }
     try {
+      document.getElementById('mac-voice-micbar').style.display = 'none';
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
       if (_voiceAudioCtx && _voiceAudioCtx.state === 'suspended') await _voiceAudioCtx.resume().catch(() => {});
       _voiceSetState('listening');
       _voiceStartOrbMic(stream);
+      if (_voiceMediaRecorder) { try { _voiceMediaRecorder.stop(); } catch (_) {} }
       const mr = new MediaRecorder(stream, {
         mimeType: MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm',
       });
@@ -893,9 +882,24 @@ function openVoiceChat() {
       };
       mr.start(200);
     } catch (_) {
-      document.getElementById('mac-voice-httpsbar').style.display = 'block';
-      _voiceSetState('error', 'Mic access denied by browser');
+      document.getElementById('mac-voice-micbar').style.display = 'block';
+      _voiceSetState('error', 'Mic access denied — allow it above and click Retry');
     }
+  }
+
+  const wsProto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const wsUrl = `${wsProto}://${location.host}/api/v1/voice/stream?token=${state.token || ''}`;
+  const ws = new WebSocket(wsUrl);
+  _voiceWs = ws;
+  _voiceTurnActive = false;
+  _voiceLastSpeechAt = 0;
+  _voiceLastStopSentAt = 0;
+
+  overlay.querySelector('#mac-voice-retry').onclick = () => startMic(ws);
+
+  ws.onopen = async () => {
+    ws.send(JSON.stringify({ type: 'start' }));
+    await startMic(ws);
   };
 
   ws.onmessage = async e => {
@@ -927,7 +931,7 @@ function openVoiceChat() {
     if (_voiceOrbRaf) { cancelAnimationFrame(_voiceOrbRaf); _voiceOrbRaf = null; }
     if (_voiceMediaRecorder) { try { _voiceMediaRecorder.stop(); } catch (_) {} }
     const el = document.getElementById('mac-voice-status');
-    if (el && !el.textContent.includes('HTTPS') && !el.textContent.includes('denied'))
+    if (el && !el.textContent.includes('denied') && !el.textContent.includes('Retry'))
       _voiceSetState('disconnected');
   };
 
@@ -944,6 +948,7 @@ function closeVoiceChat() {
     _voiceMediaRecorder = null;
   }
   if (_voiceOrbRaf) { cancelAnimationFrame(_voiceOrbRaf); _voiceOrbRaf = null; }
+  if (_voiceOrb) { _voiceOrb.destroy(); _voiceOrb = null; }
   _voiceAudioQueue = [];
   _voicePlaying = false;
   _voiceTurnActive = false;

@@ -24,6 +24,7 @@ from mac.routers import (
     cluster, academic, file_share,
     # ── New features ──
     voice_chat, video, thumbnail, activity, terminal,
+    join,
 )
 from mac.routers import setup as setup_router  # avoid shadowing the `setup` name
 
@@ -161,6 +162,7 @@ app.include_router(video.router, prefix="/api/v1")
 app.include_router(thumbnail.router, prefix="/api/v1")
 app.include_router(activity.router, prefix="/api/v1")
 app.include_router(terminal.router)
+app.include_router(join.router, prefix="/api/v1")
 
 # Serve vanilla JS frontend static files
 if FRONTEND_DIR.exists():

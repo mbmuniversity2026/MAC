@@ -15,6 +15,11 @@ COPY alembic/ alembic/
 COPY mac/ mac/
 COPY frontend/ frontend/
 
+# Worker node setup files (served via /api/v1/cluster/join/*)
+COPY docker-compose.worker.yml .
+COPY worker_agent.py .
+COPY setup-worker.bat .
+
 # Don't run as root in production
 RUN useradd -m appuser && chown -R appuser:appuser /app
 USER appuser

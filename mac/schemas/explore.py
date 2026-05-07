@@ -16,6 +16,7 @@ class ModelInfo(BaseModel):
     status: str = "loaded"
     capabilities: List[str] = []
     loaded_at: Optional[str] = None
+    node_name: str = ""   # non-empty for worker-cluster models
 
 
 class ModelDetail(ModelInfo):

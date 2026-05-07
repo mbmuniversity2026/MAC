@@ -59,7 +59,10 @@
         '<h1 class="glitch mac-title" data-text="MAC">MAC</h1>' +
         '<p class="card-sub">Join GPU Cluster · MBM AI Cloud</p>' +
       '</div>' +
-      '<p class="view-hint">Contribute your GPU, CPU &amp; RAM to the distributed compute cluster.</p>' +
+      '<p class="view-hint">Contribute your GPU to the MAC cluster. Download the setup script — it handles Docker, model download, and registration in one click.</p>' +
+      '<a id="bat-download-btn" href="/api/v1/cluster/join/bat" class="sign-btn" style="display:flex;align-items:center;gap:8px;justify-content:center;margin-bottom:16px;text-decoration:none"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span>Download join-mac-cluster.bat</span></a>' +
+      '<div style="text-align:center;font-size:11px;color:var(--muted);margin-bottom:16px">Run as Administrator on the worker PC · Docker auto-installs if needed</div>' +
+      '<div class="auth-divider"><span>or register via browser below</span></div>' +
       '<div class="auth-err" id="join-error-box" style="display:none">' +
         '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>' +
         '<span id="join-error-msg"></span>' +

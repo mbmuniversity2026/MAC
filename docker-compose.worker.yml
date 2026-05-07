@@ -1,27 +1,25 @@
-# ═══════════════════════════════════════════════════════════
-#  MAC Worker Node — run on any GPU PC to expand the cluster
+# ═══════════════════════════════════════════════════════════════════════════════
+#  MAC Worker Node — vLLM GPU Inference
+#  MBM AI Cloud · MBM University, Jodhpur
 #
-#  Setup:
-#    1. Run start-mac-worker.bat  (creates .env.worker)
-#    2. Admin approves node in Admin Panel → Cluster → Nodes
-#    3. This PC now serves AI inference for campus students
+#  worker_agent.py runs directly on the host (see setup-worker.bat)
+#  This file only manages the vLLM inference container.
 #
 #  Models (set VLLM_MODEL in .env.worker):
-#    deepseek-ai/DeepSeek-R1-Distill-Llama-8B  Logic/Math
-#    Qwen/Qwen2.5-Coder-7B-Instruct            Programming
-#    sarvamai/sarvam-2b-v0.5                   Speed/Chat
-#    meta-llama/Llama-3.1-8B-Instruct          General Ed
-#    mistralai/Mistral-7B-v0.3                 Creative Arts
-# ═══════════════════════════════════════════════════════════
+#    Qwen/Qwen2.5-Coder-7B-Instruct-AWQ   Programming / Code
+#    deepseek-ai/DeepSeek-R1-Distill-Qwen-7B  Logic / Math
+#    Qwen/Qwen2.5-7B-Instruct-AWQ         General Chat
+#    meta-llama/Llama-3.1-8B-Instruct     General Education
+#    mistralai/Mistral-7B-Instruct-v0.3   Creative Writing
+# ═══════════════════════════════════════════════════════════════════════════════
 
 services:
 
-  # ── vLLM GPU Inference ─────────────────────────────────────────────────────
   vllm:
     image: vllm/vllm-openai:latest
     container_name: mac-worker-vllm
     ports:
-      - "${VLLM_PORT:-8001}:8001"
+      - "${VLLM_PORT:-8001}:${VLLM_PORT:-8001}"
     environment:
       - HF_HOME=/root/.cache/huggingface
       - HF_TOKEN=${HF_TOKEN:-}
@@ -29,14 +27,13 @@ services:
     volumes:
       - hf-cache:/root/.cache/huggingface
     command: >
-      --model ${VLLM_MODEL:-sarvamai/sarvam-2b-v0.5}
+      --model ${VLLM_MODEL:-Qwen/Qwen2.5-7B-Instruct-AWQ}
       --port ${VLLM_PORT:-8001}
-      --gpu-memory-utilization ${VLLM_GPU_MEM:-0.45}
+      --gpu-memory-utilization ${VLLM_GPU_MEM:-0.88}
       --max-model-len ${VLLM_MAX_LEN:-4096}
       --trust-remote-code
-      --enforce-eager
       --dtype auto
-      --served-model-name ${VLLM_MODEL:-sarvamai/sarvam-2b-v0.5}
+      --served-model-name ${VLLM_MODEL:-Qwen/Qwen2.5-7B-Instruct-AWQ}
     deploy:
       resources:
         reservations:
@@ -45,66 +42,12 @@ services:
               count: 1
               capabilities: [gpu]
     restart: unless-stopped
-    networks:
-      - worker-net
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:${VLLM_PORT:-8001}/health || exit 1"]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 120s
-
-  # ── Worker Agent — registers + heartbeats to master ───────────────────────
-  worker-agent:
-    image: python:3.11-slim
-    container_name: mac-worker-agent
-    working_dir: /app
-    volumes:
-      - ./worker_agent.py:/app/worker_agent.py:ro
-      - worker-state:/app
-    command: >
-      python worker_agent.py
-    environment:
-      - MAC_MASTER_URL=${MAC_MASTER_URL}
-      - MAC_ENROLL_TOKEN=${MAC_ENROLL_TOKEN:-}
-      - MAC_WORKER_NAME=${MAC_WORKER_NAME:-Worker}
-      - MAC_WORKER_IP=${MAC_WORKER_IP:-}
-      - MAC_VLLM_PORT=${VLLM_PORT:-8001}
-      - MAC_VLLM_MODEL=${VLLM_MODEL:-sarvamai/sarvam-2b-v0.5}
-      - MAC_HEARTBEAT_SEC=${MAC_HEARTBEAT_SEC:-10}
-    networks:
-      - worker-net
-    restart: unless-stopped
-    depends_on:
-      vllm:
-        condition: service_healthy
-
-  # ── Jupyter Kernel Gateway (optional — notebook offload) ──────────────────
-  # Enable: docker compose -f docker-compose.worker.yml --profile notebook up -d
-  jupyter:
-    image: jupyter/scipy-notebook:latest
-    container_name: mac-worker-jupyter
-    ports:
-      - "${NOTEBOOK_PORT:-8889}:8888"
-    command: >
-      jupyter kernelgateway
-      --KernelGatewayApp.ip=0.0.0.0
-      --KernelGatewayApp.port=8888
-      --KernelGatewayApp.allow_origin=*
-      --KernelGatewayApp.auth_token=${JUPYTER_TOKEN:-mac-notebook-token}
-    volumes:
-      - notebooks:/home/jovyan/work
-    restart: unless-stopped
-    networks:
-      - worker-net
-    profiles:
-      - notebook
+      retries: 5
+      start_period: 180s
 
 volumes:
   hf-cache:
-  notebooks:
-  worker-state:
-
-networks:
-  worker-net:
-    driver: bridge
