@@ -7,93 +7,64 @@ on:
 
 permissions:
   contents: write
-  packages: write      # needed for GHCR push
-
-env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository_owner }}/mac
+  packages: write
 
 jobs:
 
-  # ── Job 1: Build & push Docker image to GHCR ─────────────────────────────────
+  # ── Docker image → ghcr.io ───────────────────────────────────────────────────
   docker:
-    name: Docker image → ghcr.io
+    name: Docker → GHCR
     runs-on: ubuntu-latest
-    outputs:
-      image_tag: ${{ steps.meta.outputs.tags }}
-
     steps:
       - uses: actions/checkout@v4
 
-      - name: Log in to GitHub Container Registry
+      - name: Login to GHCR
         uses: docker/login-action@v3
         with:
-          registry: ${{ env.REGISTRY }}
+          registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract image metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest
-
-      - name: Build and push Docker image
+      - name: Build and push
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/mac:latest
+            ghcr.io/${{ github.repository_owner }}/mac:${{ github.ref_name }}
 
-  # ── Job 2: Build Windows installer .exe ──────────────────────────────────────
+  # ── Windows installer ────────────────────────────────────────────────────────
   installer:
-    name: Windows installer .exe
+    name: Windows installer
     runs-on: windows-latest
-
     steps:
       - uses: actions/checkout@v4
 
-      - name: Get version from tag
-        id: version
-        shell: bash
-        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-
-      - name: Patch version in installer script
+      - name: Patch version in .iss
         shell: pwsh
         run: |
-          $ver = "${{ steps.version.outputs.VERSION }}"
-          (Get-Content mac-installer.iss -Raw) `
-            -replace '#define AppVersion "[^"]*"', "#define AppVersion `"$ver`"" |
+          $ver = "${{ github.ref_name }}".TrimStart("v")
+          (Get-Content mac-installer.iss -Raw) -replace '#define AppVersion "[^"]*"', "#define AppVersion `"$ver`"" |
             Set-Content mac-installer.iss -NoNewline
 
-      - name: Ensure required assets exist
+      - name: Prepare assets
         shell: pwsh
         run: |
-          # logo.png already exists; create placeholder ico if missing
           if (-not (Test-Path "mac-logo.ico")) {
             Copy-Item "frontend\favicon.ico" "mac-logo.ico" -ErrorAction SilentlyContinue
           }
-          # create empty download-models.bat if missing
           if (-not (Test-Path "download-models.bat")) {
-            "@echo off`r`necho Models are bundled in Docker images — no manual download needed." |
-              Out-File "download-models.bat" -Encoding ascii
+            "@echo off`r`necho Models are included in Docker images." | Out-File "download-models.bat" -Encoding ascii
           }
           New-Item -ItemType Directory -Force -Path dist | Out-Null
 
       - name: Install Inno Setup 6
         shell: pwsh
         run: |
-          $url  = "https://files.jrsoftware.org/is/6/innosetup-6.3.3.exe"
           $dest = "$env:TEMP\issetup.exe"
-          Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing
-          Start-Process -FilePath $dest `
-            -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" `
-            -Wait
+          Invoke-WebRequest -Uri "https://files.jrsoftware.org/is/6/innosetup-6.3.3.exe" -OutFile $dest -UseBasicParsing
+          Start-Process -FilePath $dest -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART" -Wait
 
       - name: Compile installer
         shell: pwsh
@@ -102,101 +73,77 @@ jobs:
           & $iscc mac-installer.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Rename installer
+      - name: Rename output
         shell: pwsh
         run: |
-          $ver = "${{ steps.version.outputs.VERSION }}"
-          $src = Get-ChildItem dist\*.exe | Select-Object -First 1
-          if ($src) {
-            Rename-Item $src.FullName "MAC-v$ver-Setup.exe" -ErrorAction SilentlyContinue
-          }
+          $ver = "${{ github.ref_name }}".TrimStart("v")
+          Get-ChildItem dist\*.exe | Select-Object -First 1 |
+            Rename-Item -NewName "MAC-v$ver-Setup.exe" -ErrorAction SilentlyContinue
           Get-ChildItem dist\
 
-      - name: Upload installer artifact
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: mac-installer
           path: dist/*.exe
           retention-days: 7
 
-  # ── Job 3: Create GitHub Release with both artifacts ─────────────────────────
+  # ── GitHub Release ───────────────────────────────────────────────────────────
   release:
     name: GitHub Release
     needs: [docker, installer]
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
 
-      - name: Get version from tag
-        id: version
-        shell: bash
-        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-
-      - name: Download installer artifact
+      - name: Download installer
         uses: actions/download-artifact@v4
         with:
           name: mac-installer
           path: dist/
 
-      - name: Write release notes
-        shell: bash
-        run: |
-          VERSION="${{ steps.version.outputs.VERSION }}"
-          IMAGE="ghcr.io/${{ env.IMAGE_NAME }}:${VERSION}"
-          NOTES=$(awk "/^## \[?v?${VERSION}\]?/{found=1;next} /^## \[/{if(found)exit} found{print}" CHANGELOG.md 2>/dev/null || true)
-          if [ -z "$NOTES" ]; then
-          NOTES="## MAC v${VERSION} — MBM AI Cloud
-
-Self-hosted AI inference platform for MBM University, Jodhpur.
-Run LLMs entirely on campus — zero cloud, zero cost.
-
----
-
-### Quick Start — Host PC (Admin Server)
-
-**Option A — Windows Installer (.exe)**
-1. Download \`MAC-v${VERSION}-Setup.exe\` below
-2. Run as Administrator → choose **Host**
-3. Start MAC Server from desktop shortcut
-
-**Option B — Docker pull**
-\`\`\`bash
-docker pull ${IMAGE}
-
-# Copy docker-compose.yml from the repo, then:
-docker compose up -d
-\`\`\`
-
----
-
-### Worker PC — Contribute your GPU
-
-On any PC with NVIDIA GPU on the same WiFi:
-1. Download \`MAC-v${VERSION}-Setup.exe\` → choose **Worker**
-2. Or download \`setup-worker.bat\` from the running server:
-   \`http://<server-ip>/api/v1/cluster/join/setup\`
-3. Run as Administrator — follow the 9-step wizard
-4. Admin approves the node in Admin Panel → Cluster → Nodes
-
----
-
-### Docker Image
-\`\`\`
-${IMAGE}
-\`\`\`
-
----
-
-[WALKTHROUGH.md](https://github.com/${{ github.repository }}/blob/main/WALKTHROUGH.md) · [README](https://github.com/${{ github.repository }}/blob/main/README.md)"
-          fi
-          echo "$NOTES" > release-notes.md
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+      - name: Create release
+        uses: softprops/action-gh-release@v1
         with:
-          name: "MAC v${{ steps.version.outputs.VERSION }} — MBM AI Cloud"
-          body_path: release-notes.md
+          name: "MAC ${{ github.ref_name }} — MBM AI Cloud"
+          body: |
+            ## MAC ${{ github.ref_name }} — MBM AI Cloud
+            **MBM University, Jodhpur · OFF the LINE. Cross the Limits.**
+
+            Self-hosted AI inference platform — runs entirely on campus LAN, zero cloud.
+
+            ---
+
+            ### Install — Host PC (Admin Server)
+
+            **Option A — Windows Installer**
+            1. Download `MAC-${{ github.ref_name }}-Setup.exe` below
+            2. Run as Administrator → choose **Host**
+            3. Launch from desktop shortcut
+
+            **Option B — Docker**
+            ```
+            docker pull ghcr.io/${{ github.repository_owner }}/mac:${{ github.ref_name }}
+            ```
+            Copy `docker-compose.yml` from the repo and run `docker compose up -d`.
+
+            ---
+
+            ### Worker PC — GPU contribution
+
+            Download `setup-worker.bat` from the running server:
+            ```
+            http://<server-ip>/api/v1/cluster/join/setup
+            ```
+            Or download `MAC-${{ github.ref_name }}-Setup.exe` → choose **Worker**.
+
+            ---
+
+            ### Docker image
+            ```
+            ghcr.io/${{ github.repository_owner }}/mac:${{ github.ref_name }}
+            ghcr.io/${{ github.repository_owner }}/mac:latest
+            ```
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
           files: dist/*.exe
