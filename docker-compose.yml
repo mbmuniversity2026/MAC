@@ -19,7 +19,9 @@ services:
     container_name: mac-api
     ports:
       - "${APP_HOST:-0.0.0.0}:8000:8000"
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     environment:
       - DATABASE_URL=postgresql+asyncpg://mac:mac_password@postgres:5432/mac_db
       - REDIS_URL=redis://redis:6379/0
@@ -33,8 +35,13 @@ services:
       - EMBEDDING_URL=http://vllm-speed:8001
       - QDRANT_URL=http://qdrant:6333
       - SEARXNG_URL=http://searxng:8080
-      - MAC_ENABLED_MODELS=qwen2.5:7b,whisper-small,veena-tts
+      - MAC_ENABLED_MODELS=qwen2.5:7b,mistral:7b-awq,qwen2-vl:7b,whisper-small,veena-tts
       - MAC_AUTO_FALLBACK=qwen2.5:7b
+      - INSIGHTFACE_HOME=/opt/insightface_models
+      - FACE_MATCH_THRESHOLD=${FACE_MATCH_THRESHOLD:-0.35}
+      - TRANSFORMERS_OFFLINE=${TRANSFORMERS_OFFLINE:-0}
+      - HF_DATASETS_OFFLINE=${HF_DATASETS_OFFLINE:-0}
+      - HF_HUB_OFFLINE=${TRANSFORMERS_OFFLINE:-0}
     depends_on:
       postgres:
         condition: service_healthy
@@ -52,6 +59,8 @@ services:
       - ./data/uploads/attendance:/app/uploads/attendance
       - ./data/uploads/fileshare:/app/uploads/fileshare
       - ./data/uploads/syllabus:/app/uploads/syllabus
+      - ./data/uploads/model_weights:/app/uploads/model_weights  # custom model uploads
+      # insightface buffalo_sc is baked into /opt/insightface_models inside the image — no volume needed
     logging:
       driver: "json-file"
       options:
@@ -62,30 +71,41 @@ services:
       - mac-net
 
   # ═══════════════════════════════════════════════════════
-  #  vLLM — Sarvam-2B  (bilingual Hindi/English voice LLM)
+  #  vLLM — Qwen2.5-7B-AWQ  (fast chat + voice LLM)
   # ═══════════════════════════════════════════════════════
   # Start with: docker compose --profile gpu up -d
-  # Without GPU: MAC runs in API-key-only mode.
+  # Without GPU: MAC runs in API-key-only + external-key mode.
+  #
+  # GPU memory: ~5 GB (AWQ quantised).  Runs GPU-only — no CPU fallback.
+  # Enforce: NVIDIA_VISIBLE_DEVICES ensures the OCI runtime exposes the GPU.
+  #
+  # Legacy Docker Desktop (Windows): uncomment `runtime: nvidia` and remove
+  # the deploy.resources block if vLLM fails to see the GPU.
   vllm-speed:
     image: vllm/vllm-openai:latest
     container_name: mac-vllm-speed
     profiles: ["gpu"]
+    # runtime: nvidia   # ← uncomment for legacy Docker Desktop (< 4.30)
     ports:
       - "${VLLM_SPEED_PORT:-8001}:${VLLM_SPEED_PORT:-8001}"
     environment:
       - HF_HOME=/root/.cache/huggingface
+      - HF_TOKEN=${HF_TOKEN:-}
+      - TRANSFORMERS_OFFLINE=${TRANSFORMERS_OFFLINE:-0}
+      - HF_HUB_OFFLINE=${TRANSFORMERS_OFFLINE:-0}
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
     volumes:
       - hf-cache:/root/.cache/huggingface
     command: >
       --model ${VLLM_SPEED_MODEL:-Qwen/Qwen2.5-7B-Instruct-AWQ}
       --port ${VLLM_SPEED_PORT:-8001}
-      --gpu-memory-utilization 0.85
-      --max-model-len 4096
+      --gpu-memory-utilization ${VLLM_SPEED_GPU_MEM:-0.85}
+      --max-model-len ${VLLM_SPEED_MAX_LEN:-4096}
       --trust-remote-code
-      --enforce-eager
       --dtype auto
-      --quantization awq_marlin
-      --served-model-name Qwen/Qwen2.5-7B-Instruct-AWQ
+      --served-model-name ${VLLM_SPEED_SERVED_NAME:-Qwen/Qwen2.5-7B-Instruct-AWQ}
+      --disable-log-requests
     deploy:
       resources:
         reservations:
@@ -93,6 +113,12 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:${VLLM_SPEED_PORT:-8001}/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 240s
     logging:
       driver: "json-file"
       options:
@@ -115,6 +141,8 @@ services:
     environment:
       - WHISPER__MODEL=${WHISPER_MODEL:-Systran/faster-whisper-small}
       - WHISPER__DEVICE=cpu
+      - HUGGINGFACE_HUB_OFFLINE=${TRANSFORMERS_OFFLINE:-0}
+      - HF_HUB_OFFLINE=${TRANSFORMERS_OFFLINE:-0}
     logging:
       driver: "json-file"
       options:
@@ -138,15 +166,9 @@ services:
       - VEENA_DEVICE=${VEENA_DEVICE:-auto}
       - TRANSFORMERS_OFFLINE=${TRANSFORMERS_OFFLINE:-0}
       - HF_DATASETS_OFFLINE=${HF_DATASETS_OFFLINE:-0}
+      - HF_HUB_OFFLINE=${TRANSFORMERS_OFFLINE:-0}
     volumes:
       - hf-cache:/root/.cache/huggingface
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
     logging:
       driver: "json-file"
       options:
@@ -280,7 +302,7 @@ services:
     environment:
       - SEARXNG_BASE_URL=http://localhost:8888/
     volumes:
-      - searxngdata:/etc/searxng
+      - ./searxng/settings.yml:/etc/searxng/settings.yml:rw
     logging:
       driver: "json-file"
       options:
@@ -295,8 +317,7 @@ volumes:
   pgadmin-data:
   redisdata:
   qdrantdata:
-  searxngdata:
-  hf-cache:       # Shared HuggingFace model cache (Sarvam-2B + Veena + Whisper)
+  hf-cache:             # Shared HuggingFace model cache (vLLM + Veena + Whisper)
   tts-voices:
 
 networks:

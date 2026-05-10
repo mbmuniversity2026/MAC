@@ -2,15 +2,26 @@
 #  MAC Worker Node — vLLM GPU Inference
 #  MBM AI Cloud · MBM University, Jodhpur
 #
-#  worker_agent.py runs directly on the host (see setup-worker.bat)
-#  This file only manages the vLLM inference container.
+#  worker_agent.py runs directly on the host (see setup-worker.bat / start-worker-pc*.bat)
+#  This file manages only the vLLM inference container.
 #
-#  Models (set VLLM_MODEL in .env.worker):
-#    Qwen/Qwen2.5-Coder-7B-Instruct-AWQ   Programming / Code
-#    deepseek-ai/DeepSeek-R1-Distill-Qwen-7B  Logic / Math
-#    Qwen/Qwen2.5-7B-Instruct-AWQ         General Chat
-#    meta-llama/Llama-3.1-8B-Instruct     General Education
-#    mistralai/Mistral-7B-Instruct-v0.3   Creative Writing
+#  Usage:
+#    docker compose -f docker-compose.worker.yml --env-file .env.worker up -d
+#
+#  Recommended models (set VLLM_MODEL in .env.worker):
+#    Qwen/Qwen2.5-7B-Instruct-AWQ          General Chat       (≈5 GB  VRAM, AWQ)
+#    mistralai/Mistral-7B-Instruct-v0.3    Creative/Writing   (≈8 GB  VRAM, fp16)
+#    mistralai/Mistral-7B-v0.3-AWQ         Creative/Writing   (≈5 GB  VRAM, AWQ)
+#    Qwen/Qwen2.5-Coder-7B-Instruct-AWQ   Programming/Code   (≈5 GB  VRAM, AWQ)
+#    deepseek-ai/DeepSeek-R1-Distill-Qwen-7B  Math/Reasoning (≈8 GB  VRAM, fp16)
+#    Qwen/Qwen2-VL-7B-Instruct             Vision/Images      (≈8 GB  VRAM, fp16)
+#    meta-llama/Llama-3.1-8B-Instruct      General Education  (≈8 GB  VRAM, fp16)
+#
+#  GPU support:
+#    Modern Docker (≥ 25) + nvidia-container-toolkit:
+#      → deploy.resources.reservations.devices (used here — preferred)
+#    Legacy Docker / Docker Desktop Windows:
+#      → uncomment `runtime: nvidia` below and comment out the deploy.resources block
 # ═══════════════════════════════════════════════════════════════════════════════
 
 services:
@@ -18,12 +29,18 @@ services:
   vllm:
     image: vllm/vllm-openai:latest
     container_name: mac-worker-vllm
+    # ── Uncomment for legacy Docker Desktop / older nvidia-container-toolkit ──
+    # runtime: nvidia
     ports:
       - "${VLLM_PORT:-8001}:${VLLM_PORT:-8001}"
     environment:
       - HF_HOME=/root/.cache/huggingface
       - HF_TOKEN=${HF_TOKEN:-}
       - TRANSFORMERS_OFFLINE=${TRANSFORMERS_OFFLINE:-0}
+      - HF_DATASETS_OFFLINE=${HF_DATASETS_OFFLINE:-0}
+      - HF_HUB_OFFLINE=${TRANSFORMERS_OFFLINE:-0}
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
     volumes:
       - hf-cache:/root/.cache/huggingface
     command: >
@@ -32,8 +49,9 @@ services:
       --gpu-memory-utilization ${VLLM_GPU_MEM:-0.88}
       --max-model-len ${VLLM_MAX_LEN:-4096}
       --trust-remote-code
-      --dtype auto
-      --served-model-name ${VLLM_MODEL:-Qwen/Qwen2.5-7B-Instruct-AWQ}
+      --dtype ${VLLM_DTYPE:-auto}
+      --served-model-name ${VLLM_SERVED_NAME:-${VLLM_MODEL:-Qwen/Qwen2.5-7B-Instruct-AWQ}}
+      --disable-log-requests
     deploy:
       resources:
         reservations:
@@ -46,8 +64,22 @@ services:
       test: ["CMD-SHELL", "curl -sf http://localhost:${VLLM_PORT:-8001}/health || exit 1"]
       interval: 30s
       timeout: 10s
-      retries: 5
-      start_period: 180s
+      retries: 10
+      start_period: 240s   # model loading can take 2-4 min on first run
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - mac-worker-net
 
 volumes:
   hf-cache:
+    # Bind-mount from a fixed path so HF models survive container recreation.
+    # Set HF_CACHE_PATH in .env.worker to override (e.g. D:\HuggingFace).
+    # If unset, Docker uses an anonymous named volume.
+
+networks:
+  mac-worker-net:
+    driver: bridge

@@ -2,10 +2,11 @@
 
 import csv
 import io
+import os
 from datetime import date, datetime, timezone, timedelta
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, Query
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, FileResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from mac.database import get_db
@@ -208,10 +209,28 @@ async def face_status(
     if user_id and user.role in ("admin", "faculty"):
         target_id = user_id
     template = await attendance_service.get_face_template(db, target_id)
+    has_photo = bool(template and template.face_photo_path and
+                     attendance_service.get_face_photo_path(target_id))
     return {
         "registered": template is not None,
         "captured_at": template.captured_at.isoformat() if template else None,
+        "has_photo": has_photo,
     }
+
+
+@router.get("/students/{user_id}/photo")
+async def student_face_photo(
+    user_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Serve registered face photo for a student. Admin/faculty access only."""
+    if user.role not in ("admin", "faculty") and user.id != user_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    path = attendance_service.get_face_photo_path(user_id)
+    if not path:
+        raise HTTPException(status_code=404, detail="No face photo registered for this student")
+    return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "max-age=3600"})
 
 
 # ── Session Management (Faculty/Admin) ───────────────────

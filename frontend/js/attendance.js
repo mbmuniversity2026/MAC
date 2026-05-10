@@ -356,6 +356,27 @@ function showToast(message, type) {
   setTimeout(() => { toast.style.opacity = '0'; toast.style.transition = 'opacity .3s'; setTimeout(() => toast.remove(), 300); }, 4000);
 }
 
+function _showFacePhotoModal(userId, name) {
+  const existing = document.getElementById('face-photo-modal-overlay');
+  if (existing) existing.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'face-photo-modal-overlay';
+  overlay.className = 'modal-overlay';
+  overlay.style.cssText = 'z-index:9999';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:340px;text-align:center;padding:24px">
+      <h3 style="margin-bottom:16px">${esc(name)}</h3>
+      <img src="/api/v1/attendance/students/${encodeURIComponent(userId)}/photo"
+           style="width:220px;height:220px;border-radius:12px;object-fit:cover;box-shadow:0 4px 20px rgba(0,0,0,.3)"
+           onerror="this.parentElement.querySelector('.photo-err').style.display='block';this.style.display='none'">
+      <p class="photo-err" style="display:none;color:var(--muted);font-size:.85rem;margin-top:12px">Photo not available</p>
+      <p class="muted" style="font-size:.78rem;margin-top:12px">Registered face photo</p>
+      <button class="btn btn-outline btn-sm" style="margin-top:12px" onclick="document.getElementById('face-photo-modal-overlay').remove()">Close</button>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+}
+
 /**
  * Generic modal helper.
  * @param {Object} opts - { title, body (HTML string), confirmText, onConfirm (async fn, return false to keep open) }
@@ -448,20 +469,29 @@ async function renderFacultyAttendance(el) {
                 ${s.students && s.students.length > 0 ? `
                 <div class="attd-records-table-wrap">
                   <table class="attd-records-table">
-                    <thead><tr><th>#</th><th>Roll No</th><th>Name</th><th>Dept</th><th>Face</th><th>Confidence</th><th>Time</th><th>IP</th></tr></thead>
+                    <thead><tr><th>#</th><th>Photo</th><th>Roll No</th><th>Name</th><th>Dept</th><th>Face</th><th>Confidence</th><th>Time</th><th>IP</th></tr></thead>
                     <tbody>
                       ${s.students.map((r, i) => `
                         <tr>
                           <td class="muted">${i + 1}</td>
-                          <td class="mono bold">${esc(r.roll_number || '""')}</td>
+                          <td style="padding:4px">
+                            ${r.face_photo_path
+                              ? `<img src="/api/v1/attendance/students/${r.user_id}/photo" alt="face"
+                                   style="width:40px;height:40px;border-radius:50%;object-fit:cover;border:2px solid ${r.face_verified ? 'var(--success)' : 'var(--danger)'};cursor:pointer"
+                                   onclick="_showFacePhotoModal('${r.user_id}','${esc(r.name||'')}')"
+                                   onerror="this.style.display='none'">`
+                              : '<div style="width:40px;height:40px;border-radius:50%;background:var(--bg-2);display:flex;align-items:center;justify-content:center;font-size:.7rem;color:var(--muted)">N/A</div>'
+                            }
+                          </td>
+                          <td class="mono bold">${esc(r.roll_number || '')}</td>
                           <td>${esc(r.name || 'Unknown')}</td>
-                          <td>${esc(r.department || '""')}</td>
+                          <td>${esc(r.department || '')}</td>
                           <td>${r.face_verified
                             ? '<span class="attd-verified-yes">&#10003; Verified</span>'
                             : '<span class="attd-verified-no">&#10007; Failed</span>'}</td>
                           <td><span class="attd-conf ${r.confidence >= 80 ? 'high' : r.confidence >= 60 ? 'med' : 'low'}">${r.confidence}%</span></td>
                           <td class="muted nowrap">${timeAgo(r.marked_at)}</td>
-                          <td class="muted mono small">${esc(r.ip_address || '""')}</td>
+                          <td class="muted mono small">${esc(r.ip_address || '')}</td>
                         </tr>`).join('')}
                     </tbody>
                   </table>

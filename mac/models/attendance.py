@@ -16,13 +16,18 @@ def _gen_uuid():
 
 
 class FaceTemplate(Base):
-    """Stored face encoding for a user, captured during registration."""
+    """Stored face encoding for a user, captured during registration.
+
+    face_encoding: 512D ArcFace float32 embedding serialised to 2048 bytes.
+    face_photo_path: relative path under /app/uploads/attendance/ to stored JPEG.
+    """
     __tablename__ = "face_templates"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_gen_uuid)
     user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True)
-    face_encoding: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)  # serialized face encoding
-    photo_hash: Mapped[str] = mapped_column(String(64), nullable=False)  # SHA-256 of original photo
+    face_encoding: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    photo_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    face_photo_path: Mapped[str | None] = mapped_column(String(200), nullable=True)  # relative path to JPEG
     captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
 

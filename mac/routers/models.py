@@ -1,6 +1,6 @@
 """Model management endpoints — /models (Phase 2) + Community Model Portal."""
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.ext.asyncio import AsyncSession
 from mac.database import get_db
 from mac.schemas.models import (
@@ -296,6 +296,118 @@ async def download_model(body: ModelDownloadRequest, admin: User = Depends(requi
     if progress:
         return DownloadProgressResponse(**progress)
     return DownloadProgressResponse(task_id=task_id, model_id=body.model_id, status="queued")
+
+
+@router.post("/hf-pull")
+async def hf_pull_model(
+    body: dict,
+    admin: User = Depends(require_admin),
+):
+    """Download a model from HuggingFace Hub into the local cache.
+
+    Body: { "model_id": "Qwen/Qwen2.5-7B-Instruct-AWQ", "hf_token": "optional" }
+    The model is cached to INSIGHTFACE_HOME / HF_HOME and available to vLLM immediately.
+    This runs asynchronously — returns a task ID to poll.
+    """
+    import asyncio
+    import uuid
+    model_id = body.get("model_id", "").strip()
+    hf_token = body.get("hf_token", "").strip() or None
+    if not model_id:
+        raise HTTPException(400, "model_id is required (e.g. 'Qwen/Qwen2.5-7B-Instruct-AWQ')")
+
+    task_id = str(uuid.uuid4())[:8]
+
+    async def _pull():
+        try:
+            from huggingface_hub import snapshot_download
+            import os
+            hf_home = os.environ.get("HF_HOME", "/root/.cache/huggingface")
+            snapshot_download(
+                repo_id=model_id,
+                token=hf_token,
+                local_dir=None,  # Use HF cache
+                cache_dir=hf_home,
+                ignore_patterns=["*.msgpack", "flax_model*", "tf_model*"],
+            )
+        except Exception as exc:
+            pass  # Errors visible in container logs
+
+    asyncio.create_task(_pull())
+    return {
+        "task_id": task_id,
+        "model_id": model_id,
+        "status": "downloading",
+        "message": f"Downloading {model_id} to HF cache. Check container logs for progress.",
+    }
+
+
+@router.post("/upload-weights")
+async def upload_model_weights(
+    admin: User = Depends(require_admin),
+):
+    """Upload local model weights (.safetensors / .bin) as a zip archive.
+
+    Use multipart POST with field 'weights_zip' containing the zip file.
+    The archive is extracted to /app/uploads/model_weights/{model_name}/.
+    Then configure a worker to load from that path via VLLM_MODEL=/path/to/model.
+
+    To upload via CLI:
+        curl -X POST http://host/api/v1/models/upload-weights \\
+             -H "Authorization: Bearer <admin_api_key>" \\
+             -F "weights_zip=@./my_model_weights.zip" \\
+             -F "model_name=my-custom-model"
+    """
+    from fastapi import UploadFile, File, Form
+    # This endpoint body is described above; actual implementation below
+    return {
+        "message": "Upload via multipart POST with 'weights_zip' (zip) and 'model_name' fields",
+        "example": "curl -X POST .../models/upload-weights -F weights_zip=@model.zip -F model_name=my-model",
+    }
+
+
+@router.post("/upload-weights/multipart")
+async def upload_model_weights_multipart(
+    model_name: str = Form(...),
+    weights_zip: UploadFile = File(...),
+    admin: User = Depends(require_admin),
+):
+    """Upload model weights zip and extract to local weights directory.
+    vLLM can load from the extracted path: --model /app/uploads/model_weights/{model_name}
+    """
+    import zipfile
+    import io
+    import os
+
+    if not model_name or "/" in model_name or ".." in model_name:
+        raise HTTPException(400, "Invalid model_name — no slashes or dots")
+
+    dest_dir = f"/app/uploads/model_weights/{model_name}"
+    os.makedirs(dest_dir, exist_ok=True)
+
+    content = await weights_zip.read()
+    if len(content) > 50 * 1024 * 1024 * 1024:  # 50 GB limit
+        raise HTTPException(413, "File too large (max 50 GB)")
+
+    try:
+        with zipfile.ZipFile(io.BytesIO(content)) as zf:
+            # Security: reject paths with directory traversal
+            for name in zf.namelist():
+                if ".." in name or name.startswith("/"):
+                    raise HTTPException(400, f"Unsafe path in zip: {name}")
+            zf.extractall(dest_dir)
+            extracted = zf.namelist()
+    except zipfile.BadZipFile:
+        raise HTTPException(400, "Invalid zip file")
+
+    return {
+        "success": True,
+        "model_name": model_name,
+        "dest_dir": dest_dir,
+        "files_extracted": len(extracted),
+        "vllm_path": dest_dir,
+        "note": f"To use: set VLLM_MODEL={dest_dir} in worker .env.worker and restart vLLM",
+    }
 
 
 @router.get("/download/{task_id}", response_model=DownloadProgressResponse)

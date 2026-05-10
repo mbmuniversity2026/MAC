@@ -230,7 +230,53 @@ _BUILTIN_MODELS: dict[str, dict] = {
         "url_key": "embedding_url",
     },
 
+    # ── Mistral models ───────────────────────────────────
+    "mistral:7b": {
+        "name": "Mistral 7B Instruct",
+        "model_type": "chat",
+        "specialty": "Creative writing, essays, language tasks, general chat",
+        "parameters": "7B",
+        "context_length": 8192,
+        "capabilities": ["chat", "completion"],
+        "category": "speed",
+        "served_name": "mistralai/Mistral-7B-Instruct-v0.3",
+        "url_key": "vllm_speed_url",
+    },
+    "mistral:7b-awq": {
+        "name": "Mistral 7B AWQ",
+        "model_type": "chat",
+        "specialty": "Creative writing, essays, general chat (4-bit quantised, 5 GB VRAM)",
+        "parameters": "7B",
+        "context_length": 8192,
+        "capabilities": ["chat", "completion"],
+        "category": "speed",
+        "served_name": "TheBloke/Mistral-7B-Instruct-v0.2-AWQ",
+        "url_key": "vllm_speed_url",
+    },
+
     # ── Vision models ────────────────────────────────────
+    "qwen2-vl:7b": {
+        "name": "Qwen2-VL 7B",
+        "model_type": "vision",
+        "specialty": "Best-in-class multimodal — image Q&A, OCR, document analysis, diagrams",
+        "parameters": "7B",
+        "context_length": 4096,
+        "capabilities": ["vision", "chat", "completion"],
+        "category": "vision",
+        "served_name": "Qwen/Qwen2-VL-7B-Instruct",
+        "url_key": "vllm_intelligence_url",
+    },
+    "qwen2-vl:2b": {
+        "name": "Qwen2-VL 2B",
+        "model_type": "vision",
+        "specialty": "Lightweight vision model — image Q&A, captions (~4 GB VRAM)",
+        "parameters": "2B",
+        "context_length": 4096,
+        "capabilities": ["vision", "chat"],
+        "category": "vision",
+        "served_name": "Qwen/Qwen2-VL-2B-Instruct",
+        "url_key": "vllm_intelligence_url",
+    },
     "moondream2": {
         "name": "Moondream 2",
         "model_type": "vision",
@@ -241,6 +287,17 @@ _BUILTIN_MODELS: dict[str, dict] = {
         "category": "vision",
         "served_name": "vikhyatk/moondream2",
         "url_key": "vllm_speed_url",
+    },
+    "llava:7b": {
+        "name": "LLaVA 1.6 Mistral 7B",
+        "model_type": "vision",
+        "specialty": "Vision-language model — image understanding, visual Q&A",
+        "parameters": "7B",
+        "context_length": 4096,
+        "capabilities": ["vision", "chat"],
+        "category": "vision",
+        "served_name": "llava-hf/llava-v1.6-mistral-7b-hf",
+        "url_key": "vllm_intelligence_url",
     },
 }
 
