@@ -476,6 +476,9 @@ function bindAuth() {
       if (errBox) errBox.style.display = 'flex';
       _shakeCard();
       if (submitBtn) { submitBtn.disabled = false; submitBtn.style.opacity = ''; }
+      if (typeof showEmojiMoment === 'function') {
+        showEmojiMoment(msg && (msg.toLowerCase().includes('connect') || msg.toLowerCase().includes('network')) ? 'conn_error' : 'login_fail');
+      }
     }
 
     var i18n = window.MAC_I18N;
@@ -496,7 +499,8 @@ function bindAuth() {
         state.token = data.access_token; state.user = data.user;
         localStorage.setItem('mac_token', data.access_token);
         _nbLoadFromStorage(); requestNotificationPermission(); startNotifPolling(); subscribeToPush(); connectFeatureFlags();
-        apiJson('/system/update-status').then(function(u) { if (u?.update_available) state.updateAvail = { version: u.latest_version, url: u.release_url || '#' }; }).catch(function(){});
+        apiJson('/system/update-status', { silent: true }).then(function(u) { if (u?.update_available) state.updateAvail = { version: u.latest_version, url: u.release_url || '#' }; }).catch(function(){});
+        if (typeof showEmojiMoment === 'function') showEmojiMoment('login_success');
         if (data.must_change_password || (data.user && data.user.must_change_password)) navigate('set-password'); else navigate('dashboard');
       } catch (ex) { showErr(i18n.t('connError')); }
       return;
@@ -516,7 +520,8 @@ function bindAuth() {
       state.token = data.access_token; state.user = data.user;
       localStorage.setItem('mac_token', data.access_token);
       _nbLoadFromStorage(); requestNotificationPermission(); startNotifPolling(); subscribeToPush(); connectFeatureFlags();
-      apiJson('/system/update-status').then(function(u) { if (u?.update_available) state.updateAvail = { version: u.latest_version, url: u.release_url || '#' }; }).catch(function(){});
+      apiJson('/system/update-status', { silent: true }).then(function(u) { if (u?.update_available) state.updateAvail = { version: u.latest_version, url: u.release_url || '#' }; }).catch(function(){});
+      if (typeof showEmojiMoment === 'function') showEmojiMoment('login_success');
       if (data.must_change_password || (data.user && data.user.must_change_password)) navigate('set-password'); else navigate('dashboard');
     } catch (ex) { showErr(i18n.t('connError')); }
     if (submitBtn) { submitBtn.disabled = false; submitBtn.style.opacity = ''; }

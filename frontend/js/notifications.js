@@ -1,6 +1,6 @@
 async function loadNotifCount() {
   try {
-    const data = await apiJson('/notifications?per_page=1');
+    const data = await apiJson('/notifications?per_page=1', { silent: true });
     const count = data.unread_count || 0;
     const badge = document.getElementById('notif-count');
     if (badge) badge.textContent = count > 0 ? (count > 99 ? '99+' : count) : '';
@@ -48,7 +48,7 @@ async function subscribeToPush() {
     const reg = await navigator.serviceWorker.ready;
     let sub = await reg.pushManager.getSubscription();
     if (!sub) {
-      const vapidResp = await apiJson('/notifications/vapid-key').catch(() => null);
+      const vapidResp = await apiJson('/notifications/vapid-key', { silent: true }).catch(() => null);
       if (!vapidResp || !vapidResp.public_key) return;
       sub = await reg.pushManager.subscribe({
         userVisibleOnly: true,

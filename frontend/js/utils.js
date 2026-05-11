@@ -541,3 +541,215 @@ if (!document.getElementById('join-spin-style')) {
 }
 
 init();
+
+// ── MAC Celebration System — Confetti + Audio + Toast ────────────────────────
+// Canvas confetti (login success), shake/pulse toasts (errors). Fully offline.
+(function() {
+
+  // ── CSS for toasts ──────────────────────────────────────────────────────────
+  if (!document.getElementById('_em-style')) {
+    const s = document.createElement('style');
+    s.id = '_em-style';
+    s.textContent = `
+      @keyframes _emIn    { 0%{transform:translateX(-50%) scale(0.3) rotate(-8deg);opacity:0} 65%{transform:translateX(-50%) scale(1.1) rotate(2deg);opacity:1} 85%{transform:translateX(-50%) scale(0.95)} 100%{transform:translateX(-50%) scale(1) rotate(0);opacity:1} }
+      @keyframes _emOut   { 0%{transform:translateX(-50%) scale(1);opacity:1} 100%{transform:translateX(-50%) scale(0.5);opacity:0} }
+      @keyframes _emShake { 0%,100%{transform:translateX(0)} 15%{transform:translateX(-10px) rotate(-5deg)} 30%{transform:translateX(10px) rotate(4deg)} 45%{transform:translateX(-8px) rotate(-3deg)} 60%{transform:translateX(8px) rotate(2deg)} 75%{transform:translateX(-4px)} }
+      @keyframes _emPulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.25)} }
+      @keyframes _emWobble{ 0%,100%{transform:translateY(0) rotate(0)} 25%{transform:translateY(-6px) rotate(-4deg)} 75%{transform:translateY(4px) rotate(3deg)} }
+      ._em-toast {
+        position:fixed; bottom:36px; left:50%; transform:translateX(-50%) scale(0.3);
+        opacity:0; z-index:2147483647; pointer-events:none;
+        display:flex; flex-direction:column; align-items:center; gap:8px;
+        background:rgba(12,12,18,0.94); color:#fff; border-radius:24px;
+        padding:20px 32px 16px; min-width:180px; text-align:center;
+        box-shadow:0 16px 48px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.07);
+        backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px);
+        font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+      }
+      ._em-toast.in   { animation:_emIn .5s cubic-bezier(0.34,1.56,0.64,1) forwards; }
+      ._em-toast.out  { animation:_emOut .32s ease-in forwards; }
+      ._em-icon { font-size:56px; line-height:1; display:block; }
+      ._em-icon.shake  { animation:_emShake .55s ease .05s; }
+      ._em-icon.pulse  { animation:_emPulse .7s ease infinite; }
+      ._em-icon.wobble { animation:_emWobble .65s ease; }
+      ._em-label { font-size:.82rem; font-weight:700; letter-spacing:.04em; white-space:nowrap; }
+    `;
+    document.head.appendChild(s);
+  }
+
+  // ── Web Audio: confetti pop ─────────────────────────────────────────────────
+  function _playConfettiSound() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const masterGain = ctx.createGain();
+      masterGain.gain.setValueAtTime(0.45, ctx.currentTime);
+      masterGain.connect(ctx.destination);
+
+      // 3 layered pops at slightly different pitches = celebration sound
+      [[0, 660, 0.18], [0.05, 880, 0.14], [0.1, 1100, 0.10]].forEach(([delay, freq, vol]) => {
+        const osc = ctx.createOscillator();
+        const g   = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq * 0.5, ctx.currentTime + delay);
+        osc.frequency.exponentialRampToValueAtTime(freq, ctx.currentTime + delay + 0.08);
+        osc.frequency.exponentialRampToValueAtTime(freq * 0.7, ctx.currentTime + delay + 0.22);
+        g.gain.setValueAtTime(0, ctx.currentTime + delay);
+        g.gain.linearRampToValueAtTime(vol, ctx.currentTime + delay + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + 0.28);
+        osc.connect(g); g.connect(masterGain);
+        osc.start(ctx.currentTime + delay);
+        osc.stop(ctx.currentTime + delay + 0.3);
+      });
+
+      // Rising sweep accent
+      const sweep = ctx.createOscillator();
+      const sg = ctx.createGain();
+      sweep.type = 'triangle';
+      sweep.frequency.setValueAtTime(300, ctx.currentTime);
+      sweep.frequency.exponentialRampToValueAtTime(1200, ctx.currentTime + 0.18);
+      sg.gain.setValueAtTime(0.08, ctx.currentTime);
+      sg.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.22);
+      sweep.connect(sg); sg.connect(masterGain);
+      sweep.start(ctx.currentTime); sweep.stop(ctx.currentTime + 0.22);
+
+      setTimeout(() => ctx.close(), 600);
+    } catch(e) {}
+  }
+
+  function _playErrorSound() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const g   = ctx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(220, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(110, ctx.currentTime + 0.18);
+      g.gain.setValueAtTime(0.15, ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.22);
+      osc.connect(g); g.connect(ctx.destination);
+      osc.start(); osc.stop(ctx.currentTime + 0.25);
+      setTimeout(() => ctx.close(), 500);
+    } catch(e) {}
+  }
+
+  // ── Canvas confetti ─────────────────────────────────────────────────────────
+  const _COLORS = ['#ff4757','#ff6b81','#ffa502','#eccc68','#7bed9f','#2ed573','#1e90ff','#70a1ff','#a29bfe','#fd79a8','#fdcb6e','#00cec9'];
+  const _EMOJIS = ['🎉','🎊','✨','⭐','🌟','💫','🎈','🎁'];
+
+  function _launchConfetti() {
+    const canvas = document.createElement('canvas');
+    canvas.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;z-index:2147483646;pointer-events:none;';
+    canvas.width  = window.innerWidth;
+    canvas.height = window.innerHeight;
+    document.body.appendChild(canvas);
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width, H = canvas.height;
+
+    const particles = [];
+    const COUNT = 110;
+
+    for (let i = 0; i < COUNT; i++) {
+      const isEmoji = Math.random() < 0.12;
+      particles.push({
+        x:     W / 2 + (Math.random() - 0.5) * W * 0.6,
+        y:     H * 0.38 + (Math.random() - 0.5) * H * 0.12,
+        vx:    (Math.random() - 0.5) * 14,
+        vy:    -Math.random() * 16 - 4,
+        w:     isEmoji ? 0 : Math.random() * 8 + 4,
+        h:     isEmoji ? 0 : Math.random() * 14 + 6,
+        r:     Math.random() * Math.PI * 2,
+        dr:    (Math.random() - 0.5) * 0.22,
+        color: _COLORS[Math.floor(Math.random() * _COLORS.length)],
+        emoji: isEmoji ? _EMOJIS[Math.floor(Math.random() * _EMOJIS.length)] : null,
+        circle: !isEmoji && Math.random() < 0.25,
+        alpha: 1,
+        gravity: 0.38 + Math.random() * 0.22,
+        drag:  0.985 + Math.random() * 0.01,
+      });
+    }
+
+    let frame = 0;
+    const MAX_FRAMES = 160;
+
+    function draw() {
+      ctx.clearRect(0, 0, W, H);
+      particles.forEach(p => {
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, p.alpha);
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.r);
+        if (p.emoji) {
+          ctx.font = '22px serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(p.emoji, 0, 0);
+        } else if (p.circle) {
+          ctx.beginPath();
+          ctx.arc(0, 0, p.w / 2, 0, Math.PI * 2);
+          ctx.fillStyle = p.color;
+          ctx.fill();
+        } else {
+          ctx.fillStyle = p.color;
+          ctx.fillRect(-p.w/2, -p.h/2, p.w, p.h);
+        }
+        ctx.restore();
+
+        p.x  += p.vx;
+        p.y  += p.vy;
+        p.vy += p.gravity;
+        p.vx *= p.drag;
+        p.vy *= p.drag;
+        p.r  += p.dr;
+        if (frame > 80) p.alpha -= 0.015;
+      });
+
+      frame++;
+      if (frame < MAX_FRAMES) {
+        requestAnimationFrame(draw);
+      } else {
+        canvas.remove();
+      }
+    }
+    requestAnimationFrame(draw);
+  }
+
+  // ── Toast ───────────────────────────────────────────────────────────────────
+  const _CFG = {
+    login_success: { emoji:'🎉', anim:'',       label:'Welcome back!',        accent:'#22c55e', confetti:true  },
+    login_fail:    { emoji:'🔒', anim:'shake',  label:'Invalid credentials',  accent:'#ef4444', confetti:false },
+    conn_error:    { emoji:'📡', anim:'pulse',  label:'Connection error',     accent:'#f59e0b', confetti:false },
+    error:         { emoji:'⚠️', anim:'wobble', label:'Something went wrong', accent:'#f97316', confetti:false },
+  };
+
+  let _active = null;
+
+  window.showEmojiMoment = function(type) {
+    const cfg = _CFG[type] || _CFG.error;
+    if (_active) { try { _active.remove(); } catch {} _active = null; }
+
+    if (cfg.confetti) {
+      _launchConfetti();
+      _playConfettiSound();
+    } else {
+      _playErrorSound();
+    }
+
+    const el = document.createElement('div');
+    el.className = '_em-toast';
+    el.innerHTML = `
+      <span class="_em-icon ${cfg.anim}">${cfg.emoji}</span>
+      <span class="_em-label" style="color:${cfg.accent}">${cfg.label}</span>
+    `;
+    document.body.appendChild(el);
+    _active = el;
+    el.getBoundingClientRect(); // force reflow
+    el.classList.add('in');
+
+    const dur = cfg.confetti ? 3600 : 2800;
+    setTimeout(() => {
+      el.classList.remove('in');
+      el.classList.add('out');
+      setTimeout(() => { if (el.parentNode) el.remove(); if (_active === el) _active = null; }, 350);
+    }, dur);
+  };
+})();

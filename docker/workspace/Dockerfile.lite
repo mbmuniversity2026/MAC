@@ -1,0 +1,68 @@
+# MBM Book Workspace — Lite (fast build, all languages, no heavy ML)
+# Python · Node · Java · Go · Rust · C/C++ · Ruby · PHP
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    TZ=Asia/Kolkata \
+    TERM=xterm-256color \
+    PYTHONUNBUFFERED=1 \
+    PATH="/home/user/.cargo/bin:/usr/local/go/bin:$PATH" \
+    GOPATH=/home/user/go
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl wget git vim nano unzip zip tar \
+    build-essential gcc g++ make cmake \
+    python3.11 python3.11-dev python3-pip python3.11-venv \
+    openjdk-17-jdk \
+    nodejs npm \
+    ruby ruby-dev \
+    php8.1-cli \
+    lua5.4 \
+    perl \
+    sqlite3 \
+    htop tree jq iputils-ping netcat-openbsd \
+    ca-certificates lsb-release \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 \
+    && update-alternatives --install /usr/bin/python  python  /usr/bin/python3.11 1 \
+    && update-alternatives --install /usr/bin/pip     pip     /usr/bin/pip3       1
+
+# Node 20 — official binary tarball (avoids dpkg/nodesource issues)
+RUN curl -fsSL https://nodejs.org/dist/v20.17.0/node-v20.17.0-linux-x64.tar.xz \
+    | tar -xJ -C /usr/local --strip-components=1 \
+    && npm install -g typescript ts-node yarn nodemon
+
+# Go 1.22
+RUN curl -fsSL https://go.dev/dl/go1.22.4.linux-amd64.tar.gz | tar -C /usr/local -xz
+
+# Rust
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
+    && /root/.cargo/bin/rustup default stable
+
+# Python essentials (fast — no heavy ML)
+RUN pip install --no-cache-dir numpy pandas scipy matplotlib requests httpx \
+    fastapi flask click rich pydantic ipython python-dotenv
+
+# Non-root user
+RUN useradd -m -s /bin/bash -u 1000 user \
+    && echo 'export PS1="\[\033[01;32m\]user@mbmbook\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ "' >> /home/user/.bashrc \
+    && echo 'alias ll="ls -la --color=auto"' >> /home/user/.bashrc \
+    && echo 'alias py="python3"' >> /home/user/.bashrc \
+    && mkdir -p /workspace && chown user:user /workspace
+
+RUN cp -r /root/.cargo /home/user/.cargo \
+    && cp -r /root/.rustup /home/user/.rustup \
+    && chown -R user:user /home/user/.cargo /home/user/.rustup
+
+USER user
+WORKDIR /workspace
+
+RUN echo 'echo ""' >> ~/.bashrc \
+    && echo 'echo "  ╔══════════════════════════════════════╗"' >> ~/.bashrc \
+    && echo 'echo "  ║   MBM Book Workspace — Ready ✓      ║"' >> ~/.bashrc \
+    && echo 'echo "  ║   Python · Node · Go · Rust · Java  ║"' >> ~/.bashrc \
+    && echo 'echo "  ╚══════════════════════════════════════╝"' >> ~/.bashrc \
+    && echo 'echo ""' >> ~/.bashrc
+
+CMD ["/bin/bash", "--login"]

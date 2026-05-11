@@ -6,7 +6,7 @@ async function renderDashboard() {
       apiJson('/auth/me'),
       apiJson('/usage/me/quota'),
       apiJson('/usage/me/history?per_page=50'),
-      apiJson('/keys/my-key/stats').catch(() => null),
+      apiJson('/keys/my-key/stats', { silent: true }).catch(() => null),
     ]);
     state.user = me;
     const q = quota;
@@ -258,10 +258,10 @@ async function _loadRoleDashboard(role, me) {
   if (role === 'student') {
     // Fetch student-specific data in parallel
     const [attData, ccData, doubtsData, notebooksCount] = await Promise.allSettled([
-      apiJson('/attendance/my-records?per_page=30'),
-      apiJson('/copy-check/my-results?per_page=10'),
-      apiJson('/doubts?per_page=5'),
-      apiJson('/notebooks/list').catch(() => ({ notebooks: [] })),
+      apiJson('/attendance/my-records?per_page=30', { silent: true }),
+      apiJson('/copy-check/my-results?per_page=10', { silent: true }),
+      apiJson('/doubts?per_page=5', { silent: true }),
+      apiJson('/notebooks/list', { silent: true }).catch(() => ({ notebooks: [] })),
     ]);
 
     const att = attData.status === 'fulfilled' ? attData.value : null;
@@ -401,8 +401,8 @@ async function _loadRoleDashboard(role, me) {
   } else if (role === 'admin') {
     // Admin gets a quick cluster + top users summary
     const [clusterData, topUsersData] = await Promise.allSettled([
-      apiJson('/cluster/nodes').catch(() => []),
-      apiJson('/usage/admin/all?per_page=5'),
+      apiJson('/cluster/nodes', { silent: true }).catch(() => []),
+      apiJson('/usage/admin/all?per_page=5', { silent: true }),
     ]);
     const nodes = clusterData.status === 'fulfilled' ? (Array.isArray(clusterData.value) ? clusterData.value : (clusterData.value.nodes||[])) : [];
     const topUsers = topUsersData.status === 'fulfilled' ? (topUsersData.value.users||[]).slice(0,5) : [];

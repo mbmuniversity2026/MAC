@@ -39,6 +39,7 @@ DEFAULT_FLAGS: list[tuple[str, str, str, list[str]]] = [
     ("model_voice",      "Voice Chat",           "Whisper + TTS voice pipeline.",   ["student", "faculty", "admin"]),
     ("model_thumbnail",  "Thumbnail Generator",  "AI-assisted thumbnail creator.",  ["student", "faculty", "admin"]),
     ("tests",            "Tests & Exams",        "Test taking and exam management.", ["student", "faculty", "admin"]),
+    ("mbm_book_ide",     "MBM Book IDE",         "VS Code-like container IDE.",      ["student", "faculty", "admin"]),
 ]
 
 

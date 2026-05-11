@@ -15,9 +15,9 @@ from mac.routers import (
     auth, explore, query, usage,
     models, integration, keys, quota,
     guardrails, rag, search,
-    nodes, attendance, doubts, notifications,
+    nodes, doubts, notifications,
     scoped_keys, agent, notebooks, kernels,
-    notebook_ws, copy_check,
+    notebook_ws,
     # ── Session 1 additions ──
     features, hardware, network, system,
     # ── Session 2 additions ──
@@ -25,8 +25,8 @@ from mac.routers import (
     # ── New features ──
     voice_chat, video, thumbnail, activity, terminal,
     join,
-    # ── Tests / Exams ──
-    tests as tests_router,
+    # ── MBM Book IDE ──
+    mbmbook,
 )
 from mac.routers import setup as setup_router  # avoid shadowing the `setup` name
 
@@ -59,6 +59,7 @@ async def lifespan(app: FastAPI):
     # ── New models ──
     import mac.models.video  # noqa: F401 (VideoProject, VideoJob)
     import mac.models.test_exam  # noqa: F401 (TestExam, TestQuestion, TestOption, TestSubmission, StudentAnswer)
+    import mac.models.mbmbook_session  # noqa: F401
 
     # Create tables (dev only — production uses Alembic)
     if settings.is_dev:
@@ -82,10 +83,12 @@ async def lifespan(app: FastAPI):
     import asyncio as _asyncio
     from mac.services import updater as _updater
     from mac.services import discovery as _discovery
+    from mac.services import mbmbook_service as _mbmbook_svc
     bg_tasks: list = []
     try:
         bg_tasks.append(_asyncio.create_task(_updater.background_check_loop()))
         bg_tasks.append(_asyncio.create_task(_discovery.start_discovery_server()))
+        bg_tasks.append(_asyncio.create_task(_mbmbook_svc.cleanup_loop()))
     except Exception as e:  # noqa: BLE001
         print(f"  [STARTUP] Background tasks failed to start: {e}")
 
@@ -135,7 +138,6 @@ app.include_router(guardrails.router, prefix="/api/v1")
 app.include_router(rag.router, prefix="/api/v1")
 app.include_router(search.router, prefix="/api/v1")
 app.include_router(nodes.router, prefix="/api/v1")
-app.include_router(attendance.router, prefix="/api/v1")
 app.include_router(doubts.router, prefix="/api/v1")
 app.include_router(notifications.router, prefix="/api/v1")
 app.include_router(scoped_keys.router, prefix="/api/v1")
@@ -143,7 +145,6 @@ app.include_router(agent.router, prefix="/api/v1")
 app.include_router(notebooks.router, prefix="/api/v1")
 app.include_router(kernels.router, prefix="/api/v1")
 app.include_router(notebook_ws.router)
-app.include_router(copy_check.router, prefix="/api/v1")
 
 # ── Session 1 routers ──
 app.include_router(features.router, prefix="/api/v1")
@@ -166,7 +167,10 @@ app.include_router(thumbnail.router, prefix="/api/v1")
 app.include_router(activity.router, prefix="/api/v1")
 app.include_router(terminal.router)
 app.include_router(join.router, prefix="/api/v1")
-app.include_router(tests_router.router, prefix="/api/v1")
+
+# ── MBM Book IDE ──
+app.include_router(mbmbook.router, prefix="/api/v1")
+app.include_router(mbmbook.ws_router)   # /ws/mbmbook/terminal (no /api/v1 prefix)
 
 # Serve vanilla JS frontend static files
 if FRONTEND_DIR.exists():

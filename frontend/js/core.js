@@ -61,13 +61,10 @@ function connectFeatureFlags() {
 
 function _applyFeatureGate() {
   const GATE_MAP = {
-    chat:       'ai_chat',
-    notebooks:  'mbm_book',
-    doubts:     'doubts_forum',
-    attendance: 'attendance',
-    copycheck:  'copy_check',
-    fileshare:  'file_sharing',
-    tests:      'tests',
+    chat:      'ai_chat',
+    mbmbook:   'mbm_book',
+    doubts:    'doubts_forum',
+    fileshare: 'file_sharing',
   };
   document.querySelectorAll('.sidebar-nav a[data-page]').forEach(a => {
     const flag = GATE_MAP[a.dataset.page];
@@ -105,7 +102,7 @@ async function api(path, opts = {}) {
   if (!(opts.body instanceof FormData)) headers['Content-Type'] = 'application/json';
   if (state.token) headers['Authorization'] = `Bearer ${state.token}`;
   const res = await fetch(`${API}${path}`, { ...opts, headers });
-  if (res.status === 401) { logout(); throw new Error('Unauthorized'); }
+  if (res.status === 401) { if (!opts.silent) logout(); throw new Error('Unauthorized'); }
   return res;
 }
 async function apiJson(path, opts) { const r = await api(path, opts); return r.json(); }
@@ -250,7 +247,7 @@ async function init() {
         // Connect feature flags SSE
         connectFeatureFlags();
         // Check for available update (non-blocking)
-        apiJson('/system/update-status').then(upd => {
+        apiJson('/system/update-status', { silent: true }).then(upd => {
           if (upd?.update_available) state.updateAvail = { version: upd.latest_version, url: upd.release_url || '#' };
         }).catch(() => {});
       }
@@ -290,22 +287,16 @@ function render() {
     if (!flagOn('ai_chat')) { navigate('dashboard'); return; }
     renderChat();
   }
-  else if (state.page === 'notebooks') {
+  else if (state.page === 'mbmbook') {
     if (!flagOn('mbm_book')) { navigate('dashboard'); return; }
-    renderNotebooks();
+    renderMBMBook();
   }
   else if (state.page === 'admin') renderAdmin();
   else if (state.page === 'settings') renderSettings();
   else if (state.page === 'doubts') renderDoubts();
-  else if (state.page === 'attendance') renderAttendance();
-  else if (state.page === 'copycheck') renderCopyCheck();
   else if (state.page === 'fileshare') {
     if (!flagOn('file_sharing')) { navigate('dashboard'); return; }
     renderFileShare();
-  }
-  else if (state.page === 'tests') {
-    if (!flagOn('tests')) { navigate('dashboard'); return; }
-    renderTests();
   }
   else { state.page = 'dashboard'; renderDashboard(); _dashRefreshIv = setInterval(() => { if (state.page === 'dashboard') renderDashboard(); }, 30000); }
 }
@@ -316,6 +307,7 @@ function logout() {
   if (_notifPollIv) { clearInterval(_notifPollIv); _notifPollIv = null; }
   if (_flagsEs) { try { _flagsEs.close(); } catch {} _flagsEs = null; }
   if (typeof _nbState !== 'undefined') { _nbState.notebooks = []; _nbState.current = null; _nbState.cells = []; _nbState.outputs = {}; }
+  if (typeof _mbCleanup === 'function') { try { _mbCleanup(); } catch {} }
   navigate('login');
 }
 
