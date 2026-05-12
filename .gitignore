@@ -26,6 +26,7 @@ docker-compose.override.yml
 *.pem
 *.crt
 secrets/
+cluster.env
 
 # OS
 .DS_Store
