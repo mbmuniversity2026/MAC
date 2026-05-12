@@ -1,0 +1,25 @@
+FROM python:3.11-slim
+
+LABEL org.opencontainers.image.title="MAC Worker Agent"
+LABEL org.opencontainers.image.description="MBM AI Cloud — Worker node agent. Registers with the MAC host and sends heartbeats."
+LABEL org.opencontainers.image.source="https://github.com/mbmuniversity2026/MAC"
+LABEL org.opencontainers.image.licenses="MIT"
+
+WORKDIR /app
+
+RUN pip install --no-cache-dir psutil requests urllib3
+
+COPY worker_agent.py .
+
+# State file lives in /data so it can be persisted across container restarts
+ENV MAC_STATE_FILE=/data/mac_worker_state.json
+
+VOLUME ["/data"]
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+  CMD python -c "\
+import json,os,sys; \
+f=os.environ.get('MAC_STATE_FILE','.mac_worker_state.json'); \
+sys.exit(0 if os.path.exists(f) and json.load(open(f)).get('node_id') else 1)" || exit 1
+
+CMD ["python", "worker_agent.py"]

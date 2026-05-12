@@ -1,36 +1,27 @@
 # ═══════════════════════════════════════════════════════════════════════════════
-#  MAC Worker Node — vLLM GPU Inference
+#  MAC Worker Node — vLLM GPU Inference + Worker Agent
 #  MBM AI Cloud · MBM University, Jodhpur
 #
-#  worker_agent.py runs directly on the host (see setup-worker.bat / start-worker-pc*.bat)
-#  This file manages only the vLLM inference container.
-#
-#  Usage:
+#  Usage (after filling .env.worker):
 #    docker compose -f docker-compose.worker.yml --env-file .env.worker up -d
 #
-#  Recommended models (set VLLM_MODEL in .env.worker):
-#    Qwen/Qwen2.5-7B-Instruct-AWQ          General Chat       (≈5 GB  VRAM, AWQ)
-#    mistralai/Mistral-7B-Instruct-v0.3    Creative/Writing   (≈8 GB  VRAM, fp16)
-#    mistralai/Mistral-7B-v0.3-AWQ         Creative/Writing   (≈5 GB  VRAM, AWQ)
-#    Qwen/Qwen2.5-Coder-7B-Instruct-AWQ   Programming/Code   (≈5 GB  VRAM, AWQ)
-#    deepseek-ai/DeepSeek-R1-Distill-Qwen-7B  Math/Reasoning (≈8 GB  VRAM, fp16)
-#    Qwen/Qwen2-VL-7B-Instruct             Vision/Images      (≈8 GB  VRAM, fp16)
-#    meta-llama/Llama-3.1-8B-Instruct      General Education  (≈8 GB  VRAM, fp16)
+#  OR pull pre-built image from ghcr.io (no build needed on worker PC):
+#    Set MAC_WORKER_IMAGE=ghcr.io/mbmuniversity2026/mac-worker:latest in .env.worker
 #
-#  GPU support:
-#    Modern Docker (≥ 25) + nvidia-container-toolkit:
-#      → deploy.resources.reservations.devices (used here — preferred)
-#    Legacy Docker / Docker Desktop Windows:
-#      → uncomment `runtime: nvidia` below and comment out the deploy.resources block
+#  Recommended AWQ models (set VLLM_MODEL in .env.worker):
+#    solidrust/Mistral-7B-Instruct-v0.3-AWQ   Creative/Chat    (~4.5 GB, AWQ)
+#    Qwen/Qwen2.5-7B-Instruct-AWQ             General Chat     (~5 GB,   AWQ)
+#    Qwen/Qwen2.5-Coder-7B-Instruct-AWQ       Programming      (~5 GB,   AWQ)
+#    deepseek-ai/DeepSeek-R1-Distill-Qwen-7B  Math/Reasoning   (~8 GB,   fp16)
+#    Qwen/Qwen2-VL-7B-Instruct                Vision/Images    (~8 GB,   fp16)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 services:
 
+  # ── vLLM GPU inference ──────────────────────────────────────────────────────
   vllm:
     image: vllm/vllm-openai:latest
     container_name: mac-worker-vllm
-    # ── Uncomment for legacy Docker Desktop / older nvidia-container-toolkit ──
-    # runtime: nvidia
     ports:
       - "${VLLM_PORT:-8001}:${VLLM_PORT:-8001}"
     environment:
@@ -44,13 +35,13 @@ services:
     volumes:
       - hf-cache:/root/.cache/huggingface
     command: >
-      --model ${VLLM_MODEL:-Qwen/Qwen2.5-7B-Instruct-AWQ}
+      --model ${VLLM_MODEL:-solidrust/Mistral-7B-Instruct-v0.3-AWQ}
       --port ${VLLM_PORT:-8001}
-      --gpu-memory-utilization ${VLLM_GPU_MEM:-0.88}
-      --max-model-len ${VLLM_MAX_LEN:-4096}
+      --gpu-memory-utilization ${VLLM_GPU_MEM:-0.85}
+      --max-model-len ${VLLM_MAX_LEN:-8192}
       --trust-remote-code
       --dtype ${VLLM_DTYPE:-auto}
-      --served-model-name ${VLLM_SERVED_NAME:-${VLLM_MODEL:-Qwen/Qwen2.5-7B-Instruct-AWQ}}
+      --served-model-name ${VLLM_SERVED_NAME:-${VLLM_MODEL:-solidrust/Mistral-7B-Instruct-v0.3-AWQ}}
     deploy:
       resources:
         reservations:
@@ -64,7 +55,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 10
-      start_period: 240s   # model loading can take 2-4 min on first run
+      start_period: 300s
     logging:
       driver: "json-file"
       options:
@@ -73,11 +64,42 @@ services:
     networks:
       - mac-worker-net
 
+  # ── MAC Worker Agent ─────────────────────────────────────────────────────────
+  # Registers this PC with the MAC host and sends live heartbeats.
+  # Uses pre-built image from ghcr.io — no build step needed on worker PC.
+  worker-agent:
+    image: ${MAC_WORKER_IMAGE:-ghcr.io/mbmuniversity2026/mac-worker:latest}
+    container_name: mac-worker-agent
+    restart: unless-stopped
+    depends_on:
+      vllm:
+        condition: service_started
+    environment:
+      - MAC_MASTER_URL=${MAC_MASTER_URL:-https://10.10.12.115}
+      - MAC_ENROLL_TOKEN=${MAC_ENROLL_TOKEN}
+      - MAC_WORKER_NAME=${MAC_WORKER_NAME:-worker-pc}
+      - MAC_WORKER_IP=${MAC_WORKER_IP:-}
+      - MAC_VLLM_PORT=${VLLM_PORT:-8001}
+      - MAC_VLLM_MODEL=${VLLM_MODEL:-solidrust/Mistral-7B-Instruct-v0.3-AWQ}
+      - MAC_VLLM_URL=http://vllm:${VLLM_PORT:-8001}
+      - MAC_GPU_NAME=${MAC_GPU_NAME:-}
+      - MAC_GPU_VRAM_MB=${MAC_GPU_VRAM_MB:-0}
+      - MAC_HEARTBEAT_SEC=${MAC_HEARTBEAT_SEC:-10}
+      - MAC_ENGINE=vllm
+      - MAC_STATE_FILE=/data/mac_worker_state.json
+    volumes:
+      - worker-state:/data
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+    networks:
+      - mac-worker-net
+
 volumes:
   hf-cache:
-    # Bind-mount from a fixed path so HF models survive container recreation.
-    # Set HF_CACHE_PATH in .env.worker to override (e.g. D:\HuggingFace).
-    # If unset, Docker uses an anonymous named volume.
+  worker-state:
 
 networks:
   mac-worker-net:

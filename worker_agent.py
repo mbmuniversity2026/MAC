@@ -32,7 +32,7 @@ import time
 import urllib.error
 import urllib.request
 
-STATE_FILE = ".mac_worker_state.json"
+STATE_FILE = os.environ.get("MAC_STATE_FILE", ".mac_worker_state.json")
 REGISTER_RETRIES = 10
 REGISTER_RETRY_DELAY = 15   # seconds between registration attempts
 
@@ -213,8 +213,8 @@ def main() -> None:
     my_ip         = _my_ip()
     state         = _load_state()
 
-    # vLLM/Ollama base URL on this PC
-    vllm_base = f"http://localhost:{vllm_port}"
+    # vLLM/Ollama base URL — override with MAC_VLLM_URL when running in Docker
+    vllm_base = _env("MAC_VLLM_URL") or f"http://localhost:{vllm_port}"
 
     print("=" * 56)
     print("  MAC Worker Agent — MBM AI Cloud")
