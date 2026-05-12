@@ -51,7 +51,6 @@ services:
       --trust-remote-code
       --dtype ${VLLM_DTYPE:-auto}
       --served-model-name ${VLLM_SERVED_NAME:-${VLLM_MODEL:-Qwen/Qwen2.5-7B-Instruct-AWQ}}
-      --disable-log-requests
     deploy:
       resources:
         reservations:
