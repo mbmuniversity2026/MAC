@@ -6,14 +6,14 @@ cd /d "%~dp0"
 echo.
 echo  ================================================================
 echo   MAC MOST — MBM AI Cloud
-echo   PC2: WORKER NODE — Mistral-7B-Instruct AWQ
+echo   PC2: WORKER NODE — Mistral-7B-Instruct-v0.3-AWQ
 echo   Role: Creative writing, general chat, essays, language tasks
 echo   MBM University, Jodhpur, Rajasthan, India
 echo  ================================================================
 echo.
 
 REM ──────────────────────────────────────────────────────────────────────────────
-REM STEP 1: Docker
+REM STEP 1: Docker check
 REM ──────────────────────────────────────────────────────────────────────────────
 echo [1/9] Checking Docker...
 docker info >nul 2>&1
@@ -40,18 +40,20 @@ echo.
 echo [2/9] Reading cluster configuration...
 set "HOST_IP="
 set "HOST_URL="
+set "HOST_HTTPS_URL="
 set "ENROLL_TOKEN="
-set "ADMIN_EMAIL=abhisek.cse@mbm.ac.in"
+set "ADMIN_ROLL=abhisek.cse@mbm.ac.in"
 set "ADMIN_PASS=Admin@1234"
 
 if exist "cluster.env" (
     echo  Found cluster.env — loading configuration...
     for /f "usebackq tokens=1,* delims==" %%a in ("cluster.env") do (
-        if "%%a"=="HOST_IP"      set "HOST_IP=%%b"
-        if "%%a"=="HOST_URL"     set "HOST_URL=%%b"
-        if "%%a"=="ENROLL_TOKEN" set "ENROLL_TOKEN=%%b"
-        if "%%a"=="ADMIN_EMAIL"  set "ADMIN_EMAIL=%%b"
-        if "%%a"=="ADMIN_PASS"   set "ADMIN_PASS=%%b"
+        if "%%a"=="HOST_IP"         set "HOST_IP=%%b"
+        if "%%a"=="HOST_URL"        set "HOST_URL=%%b"
+        if "%%a"=="HOST_HTTPS_URL"  set "HOST_HTTPS_URL=%%b"
+        if "%%a"=="ENROLL_TOKEN"    set "ENROLL_TOKEN=%%b"
+        if "%%a"=="ADMIN_ROLL"      set "ADMIN_ROLL=%%b"
+        if "%%a"=="ADMIN_PASS"      set "ADMIN_PASS=%%b"
     )
     echo  [OK] Loaded: HOST_IP=!HOST_IP!
 ) else (
@@ -61,42 +63,44 @@ if exist "cluster.env" (
     echo.
 )
 
-REM ── If HOST_IP still missing, ask once ───────────────────────────────────────
+REM ── If HOST_IP still missing, ask ────────────────────────────────────────────
 if not defined HOST_IP (
-    echo  Enter HOST PC (PC1) LAN IP address:
-    echo  Example: 192.168.1.100
-    echo.
+    echo  Enter HOST PC (PC1) LAN IP address (e.g. 10.10.12.115):
     set /p HOST_IP="Host IP: "
     if not defined HOST_IP (echo  [ERROR] Host IP required. & pause & exit /b 1)
-    set "HOST_URL=http://!HOST_IP!"
 )
-if not defined HOST_URL set "HOST_URL=http://!HOST_IP!"
+if not defined HOST_URL     set "HOST_URL=http://!HOST_IP!"
+if not defined HOST_HTTPS_URL set "HOST_HTTPS_URL=https://!HOST_IP!"
+
+REM ── Use HTTPS URL for API calls (host has SSL) ───────────────────────────────
+set "API_URL=!HOST_HTTPS_URL!"
 
 REM ── If ENROLL_TOKEN missing, auto-fetch from host ─────────────────────────────
 if not defined ENROLL_TOKEN (
-    echo  Attempting to fetch enrollment token from host...
+    echo  Attempting to auto-fetch enrollment token from host...
     for /f "usebackq tokens=*" %%t in (`powershell -NoProfile -Command ^
+        "[System.Net.ServicePointManager]::ServerCertificateValidationCallback = {$true}; " ^
         "try { " ^
-            "$lr=Invoke-RestMethod -Uri '!HOST_URL!/api/v1/auth/login' -Method POST " ^
-                "-Body ([pscustomobject]@{email='!ADMIN_EMAIL!';password='!ADMIN_PASS!'} | ConvertTo-Json) " ^
+            "$lr = Invoke-RestMethod -Uri '!API_URL!/api/v1/auth/login' -Method POST " ^
+                "-Body (ConvertTo-Json @{roll_number='!ADMIN_ROLL!';password='!ADMIN_PASS!'}) " ^
                 "-ContentType 'application/json' -ErrorAction Stop; " ^
-            "$er=Invoke-RestMethod -Uri '!HOST_URL!/api/v1/cluster/enroll-token' -Method POST " ^
+            "$er = Invoke-RestMethod -Uri '!API_URL!/api/v1/cluster/enroll-token' -Method POST " ^
                 "-Headers @{Authorization='Bearer '+$lr.access_token} " ^
-                "-Body ([pscustomobject]@{label='pc2-mistral';expires_hours=168} | ConvertTo-Json) " ^
+                "-Body (ConvertTo-Json @{label='pc2-mistral';expires_hours=168}) " ^
                 "-ContentType 'application/json' -ErrorAction Stop; " ^
             "Write-Output $er.token " ^
         "} catch { Write-Output 'TOKEN_ERROR' }" 2^>nul`) do set "ENROLL_TOKEN=%%t"
 
     if "!ENROLL_TOKEN!"=="TOKEN_ERROR" (
         echo  [WARN] Auto-fetch failed. Enter enrollment token manually.
-        echo         From host: Admin Panel ^> Cluster ^> Generate Token
+        echo         From host: Login as Admin ^> Admin Panel ^> Cluster ^> Generate Token
         set /p ENROLL_TOKEN="Enrollment token: "
         if not defined ENROLL_TOKEN (echo  [ERROR] Token required. & pause & exit /b 1)
     ) else (
-        echo  [OK] Enrollment token fetched from host.
+        echo  [OK] Enrollment token auto-fetched from host.
     )
 )
-echo  [OK] Host: !HOST_URL!
+echo  [OK] Host: !API_URL!
 
 REM ──────────────────────────────────────────────────────────────────────────────
 REM STEP 3: GPU Test
@@ -110,7 +114,7 @@ set "HAS_GPU=0"
 nvidia-smi >nul 2>&1
 if errorlevel 1 (
     echo  [ERROR] No NVIDIA GPU detected. Mistral-7B requires a GPU.
-    echo          Use setup-worker.bat for CPU-only (Ollama) mode instead.
+    echo          Install NVIDIA drivers from https://nvidia.com/drivers
     pause & exit /b 1
 )
 
@@ -125,7 +129,7 @@ echo   GPU  : !GPU_NAME!
 echo   VRAM : !GPU_VRAM_MB! MB (~!GPU_VRAM_GB! GB)
 
 if !GPU_VRAM_MB! LSS 4500 (
-    echo  [WARN] Low VRAM. Mistral-7B-AWQ needs ~5 GB. May fail.
+    echo  [WARN] Low VRAM (!GPU_VRAM_MB! MB^). Mistral-7B-AWQ needs ~5 GB. May not load.
 )
 
 echo  Testing Docker GPU passthrough...
@@ -133,9 +137,9 @@ docker run --rm --gpus all nvidia/cuda:12.1.0-base-ubuntu22.04 nvidia-smi --quer
 if errorlevel 1 (
     echo.
     echo  [ERROR] Docker cannot access the GPU.
-    echo   FIX: Docker Desktop ^> Settings ^> General ^> Use WSL 2 engine (ON)
-    echo        Docker Desktop ^> Settings ^> Resources ^> WSL Integration ^> GPU (ON)
-    echo        Apply and Restart Docker Desktop, then rerun this script.
+    echo   FIX 1: Docker Desktop ^> Settings ^> General ^> Use WSL 2 backend (ON)
+    echo   FIX 2: Docker Desktop ^> Settings ^> Resources ^> WSL Integration ^> Enable GPU
+    echo   FIX 3: Apply and Restart Docker Desktop, then rerun this script.
     pause & exit /b 1
 )
 echo  [OK] GPU accessible inside Docker.
@@ -149,8 +153,6 @@ set "WORKER_IP="
 for /f "usebackq tokens=*" %%i in (`powershell -NoProfile -Command "(Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.InterfaceAlias -notmatch 'Loopback|vEthernet|WSL|Docker|Hyper-V' -and $_.IPAddress -ne '127.0.0.1' } | Sort-Object -Property InterfaceMetric | Select-Object -First 1).IPAddress" 2^>nul`) do set "WORKER_IP=%%i"
 if not defined WORKER_IP set "WORKER_IP=0.0.0.0"
 echo  [OK] This PC's LAN IP: !WORKER_IP!
-
-REM Worker name
 set "WORKER_NAME=%COMPUTERNAME%-Mistral-PC2"
 echo  [OK] Worker name: !WORKER_NAME!
 
@@ -164,65 +166,115 @@ netsh advfirewall firewall add rule name="MAC-MOST Worker vLLM" dir=in action=al
 echo  [OK] Port 8001 opened for vLLM.
 
 REM ──────────────────────────────────────────────────────────────────────────────
-REM STEP 6: Write .env.worker
+REM STEP 6: Select model based on VRAM
 REM ──────────────────────────────────────────────────────────────────────────────
 echo.
-echo [6/9] Writing .env.worker configuration...
+echo [6/9] Selecting Mistral model based on GPU VRAM...
 
-REM Mistral-7B-Instruct-v0.2-AWQ — ~5 GB VRAM, fast, excellent quality
-set "VLLM_MODEL=TheBloke/Mistral-7B-Instruct-v0.2-AWQ"
+REM Default: AWQ (4-bit), ~5 GB VRAM — works on 6 GB+ GPUs
+set "VLLM_MODEL=solidrust/Mistral-7B-Instruct-v0.3-AWQ"
 set "VLLM_GPU_MEM=0.85"
 set "VLLM_MAX_LEN=8192"
 set "VLLM_DTYPE=auto"
-set "MODEL_LABEL=Mistral-7B-Instruct-AWQ"
+set "MODEL_LABEL=Mistral-7B-v0.3-AWQ (4-bit ~5GB)"
+set "DOWNLOAD_SIZE=~4.5 GB"
 
-REM Override to fp16 if VRAM >= 8 GB
+REM 8+ GB VRAM: upgrade to full fp16 — better quality, more VRAM
 if !GPU_VRAM_MB! GEQ 8000 (
     set "VLLM_MODEL=mistralai/Mistral-7B-Instruct-v0.3"
     set "VLLM_GPU_MEM=0.88"
-    set "MODEL_LABEL=Mistral-7B-Instruct-v0.3-fp16"
-    echo  [INFO] 8+ GB VRAM detected — using full fp16 Mistral-7B-v0.3.
+    set "VLLM_MAX_LEN=8192"
+    set "VLLM_DTYPE=float16"
+    set "MODEL_LABEL=Mistral-7B-v0.3-fp16 (16-bit ~14GB)"
+    set "DOWNLOAD_SIZE=~14 GB"
+    echo  [INFO] 8+ GB VRAM — using full fp16 Mistral-7B-v0.3 for better quality.
+) else (
+    echo  [INFO] Using AWQ 4-bit Mistral-7B-v0.3 (fits in 6 GB VRAM).
 )
+echo  Model    : !MODEL_LABEL!
+echo  Download : !DOWNLOAD_SIZE! (first run only — cached after that)
 
+REM ──────────────────────────────────────────────────────────────────────────────
+REM STEP 7: Write .env.worker
+REM ──────────────────────────────────────────────────────────────────────────────
+echo.
+echo [7/9] Writing .env.worker configuration...
 (
-    echo MAC_MASTER_URL=!HOST_URL!
+    echo MAC_MASTER_URL=!HOST_HTTPS_URL!
     echo MAC_ENROLL_TOKEN=!ENROLL_TOKEN!
     echo MAC_WORKER_NAME=!WORKER_NAME!
     echo MAC_WORKER_IP=!WORKER_IP!
     echo MAC_VLLM_PORT=8001
+    echo MAC_VLLM_MODEL=!VLLM_MODEL!
     echo MAC_HEARTBEAT_SEC=10
     echo MAC_ENGINE=vllm
     echo MAC_GPU_NAME=!GPU_NAME!
     echo MAC_GPU_VRAM_MB=!GPU_VRAM_MB!
     echo VLLM_PORT=8001
     echo VLLM_MODEL=!VLLM_MODEL!
-    echo MAC_VLLM_MODEL=!VLLM_MODEL!
     echo VLLM_GPU_MEM=!VLLM_GPU_MEM!
     echo VLLM_MAX_LEN=!VLLM_MAX_LEN!
     echo VLLM_DTYPE=!VLLM_DTYPE!
     echo VLLM_SERVED_NAME=!VLLM_MODEL!
 ) > .env.worker
-echo  [OK] .env.worker saved. Model: !MODEL_LABEL!
+echo  [OK] .env.worker saved.
 
 REM ──────────────────────────────────────────────────────────────────────────────
-REM STEP 7: Start vLLM container
+REM STEP 8: Start vLLM Docker container
+REM   - First run: HuggingFace downloads the model weights (!DOWNLOAD_SIZE!)
+REM   - Subsequent starts: loads from local cache (~2-3 min)
+REM   - HF_TOKEN optional — Mistral-7B is public, no token needed
 REM ──────────────────────────────────────────────────────────────────────────────
 echo.
-echo [7/9] Starting Mistral vLLM container (!MODEL_LABEL!)...
+echo [8/9] Starting Mistral vLLM container...
+echo  Model: !VLLM_MODEL!
+echo  NOTE: First run downloads !DOWNLOAD_SIZE! from HuggingFace.
+echo        Keep internet ON during first start. This only happens once.
+echo.
+
 docker compose -f docker-compose.worker.yml --env-file .env.worker up -d --remove-orphans
 if errorlevel 1 (
-    echo  [ERROR] Docker Compose failed. Check: docker compose -f docker-compose.worker.yml logs
+    echo  [ERROR] Docker Compose failed.
+    echo   Check logs: docker compose -f docker-compose.worker.yml logs --tail 50
     pause & exit /b 1
 )
 echo  [OK] vLLM container started.
-echo   First run: model downloads ~4.5 GB (AWQ) or ~14 GB (fp16) — keep internet on.
-echo   Subsequent starts: ~2-3 min to load from cache.
+echo.
+echo  Waiting for vLLM to load model (first run: 5-15 min for download + load)...
+echo  Tip: Open another terminal and run:
+echo       docker logs mac-worker-vllm -f
+echo  to watch the download progress.
+echo.
+
+REM Wait for vLLM health before registering with host
+set "VLLM_READY=0"
+set "WAIT_COUNT=0"
+:wait_vllm
+timeout /t 15 /nobreak >nul
+set /a "WAIT_COUNT+=1"
+for /f "usebackq tokens=*" %%h in (`curl -sf http://localhost:8001/health 2^>nul`) do (
+    set "VLLM_READY=1"
+)
+if "!VLLM_READY!"=="1" (
+    echo  [OK] vLLM is ready! Model loaded on GPU.
+    goto vllm_ok
+)
+set /a "WAITED=!WAIT_COUNT! * 15"
+echo  Still loading... (!WAITED!s elapsed) — model loading into GPU VRAM
+if !WAIT_COUNT! LSS 60 goto wait_vllm
+echo  [WARN] vLLM not ready after 15 min. Proceeding anyway — agent will retry.
+:vllm_ok
+
+REM Show loaded model
+for /f "usebackq tokens=*" %%m in (`curl -s http://localhost:8001/v1/models 2^>nul`) do (
+    echo  vLLM serving: %%m
+)
 
 REM ──────────────────────────────────────────────────────────────────────────────
-REM STEP 8: Check Python + worker_agent dependencies
+REM STEP 9: Check Python + start worker agent
 REM ──────────────────────────────────────────────────────────────────────────────
 echo.
-echo [8/9] Checking Python + worker agent...
+echo [9/9] Starting worker agent...
 python --version >nul 2>&1
 if errorlevel 1 (
     echo  [INFO] Python not found. Installing Python 3.11...
@@ -235,15 +287,8 @@ if errorlevel 1 (
     echo  Installing required Python packages...
     python -m pip install psutil requests -q
 )
-echo  [OK] Python ready.
 
-REM ──────────────────────────────────────────────────────────────────────────────
-REM STEP 9: Start worker agent
-REM ──────────────────────────────────────────────────────────────────────────────
-echo.
-echo [9/9] Starting worker agent...
-
-set "MAC_MASTER_URL=!HOST_URL!"
+set "MAC_MASTER_URL=!HOST_HTTPS_URL!"
 set "MAC_ENROLL_TOKEN=!ENROLL_TOKEN!"
 set "MAC_WORKER_NAME=!WORKER_NAME!"
 set "MAC_WORKER_IP=!WORKER_IP!"
@@ -256,21 +301,21 @@ set "MAC_ENGINE=vllm"
 
 echo.
 echo  ================================================================
-echo   PC2 WORKER RUNNING — !MODEL_LABEL!
+echo   PC2 WORKER IS RUNNING
 echo.
-echo   Host     : !HOST_URL!
-echo   This PC  : !WORKER_IP!
-echo   Model    : !MODEL_LABEL! (port 8001)
+echo   Model    : !MODEL_LABEL!
+echo   This PC  : !WORKER_IP!:8001
+echo   Host     : !HOST_HTTPS_URL!
 echo.
-echo   NEXT STEPS:
-echo   1. Open !HOST_URL! in browser on any PC
+echo   ── NEXT STEPS ──────────────────────────────────────────────
+echo   1. Open !HOST_HTTPS_URL! in browser on ANY PC on the LAN
 echo   2. Login as Admin: abhisek.cse@mbm.ac.in / Admin@1234
 echo   3. Admin Panel ^> Cluster ^> Nodes
-echo   4. Find "!WORKER_NAME!" and click Approve
-echo   5. Mistral-7B appears in Chat model list
+echo   4. Find "!WORKER_NAME!" → Click APPROVE
+echo   5. Mistral-7B appears in the chat model dropdown!
 echo.
+echo   Worker auto-deregisters when this window is closed.
 echo   vLLM log: docker compose -f docker-compose.worker.yml logs -f
-echo   This window = live agent log. Keep it open.
 echo  ================================================================
 echo.
 

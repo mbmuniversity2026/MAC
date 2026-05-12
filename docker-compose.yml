@@ -35,7 +35,7 @@ services:
       - EMBEDDING_URL=http://vllm-speed:8001
       - QDRANT_URL=http://qdrant:6333
       - SEARXNG_URL=http://searxng:8080
-      - MAC_ENABLED_MODELS=qwen2.5:7b,mistral:7b-awq,qwen2-vl:7b,whisper-small,veena-tts
+      - MAC_ENABLED_MODELS=qwen2.5:7b,whisper-small,veena-tts
       - MAC_AUTO_FALLBACK=qwen2.5:7b
       - INSIGHTFACE_HOME=/opt/insightface_models
       - FACE_MATCH_THRESHOLD=${FACE_MATCH_THRESHOLD:-0.35}

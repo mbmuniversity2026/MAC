@@ -47,6 +47,28 @@ async def list_models(
     db: AsyncSession = Depends(get_db),
 ):
     """List all available models from registry + live cluster workers."""
+    import httpx as _httpx
+    from mac.config import settings as _s
+
+    # Query every distinct vLLM URL once — get the set of actually-served model IDs.
+    # Chat/vision/embedding models are only shown if vLLM is actually serving them.
+    _vllm_served: set[str] = set()
+    _urls_checked: set[str] = set()
+    for _info in DEFAULT_MODELS.values():
+        _url = getattr(_s, _info.get("url_key", "vllm_speed_url"), _s.vllm_base_url)
+        if _url in _urls_checked:
+            continue
+        _urls_checked.add(_url)
+        try:
+            async with _httpx.AsyncClient(timeout=2) as _c:
+                _r = await _c.get(f"{_url}/v1/models")
+                if _r.status_code == 200:
+                    for _m in _r.json().get("data", []):
+                        if _m.get("id"):
+                            _vllm_served.add(_m["id"])
+        except Exception:
+            pass
+
     models = []
     for model_id, info in DEFAULT_MODELS.items():
         mt = info.get("model_type", "chat")
@@ -56,6 +78,12 @@ async def list_models(
 
         if capability != "all" and capability not in info.get("capabilities", []):
             continue
+
+        # For chat/vision/embedding: only show if actually served by vLLM right now.
+        # STT and TTS have their own services — always show them.
+        if mt not in ("stt", "tts") and _vllm_served:
+            if info.get("served_name") not in _vllm_served:
+                continue
 
         models.append(ModelInfo(
             id=model_id,

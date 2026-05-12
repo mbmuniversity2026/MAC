@@ -241,6 +241,7 @@ _BUILTIN_MODELS: dict[str, dict] = {
         "category": "speed",
         "served_name": "mistralai/Mistral-7B-Instruct-v0.3",
         "url_key": "vllm_speed_url",
+        "worker_only": True,
     },
     "mistral:7b-awq": {
         "name": "Mistral 7B AWQ",
@@ -250,7 +251,7 @@ _BUILTIN_MODELS: dict[str, dict] = {
         "context_length": 8192,
         "capabilities": ["chat", "completion"],
         "category": "speed",
-        "served_name": "TheBloke/Mistral-7B-Instruct-v0.2-AWQ",
+        "served_name": "solidrust/Mistral-7B-Instruct-v0.3-AWQ",
         "url_key": "vllm_speed_url",
     },
 
