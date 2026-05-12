@@ -215,20 +215,68 @@ async def list_endpoints():
 
 @router.get("/health", response_model=HealthResponse)
 async def health():
-    """Platform health — models loaded, uptime."""
-    model_names = [info["served_name"] for info in DEFAULT_MODELS.values()]
+    """Platform health — local GPU vLLM status + loaded models."""
+    import httpx as _httpx
+    from mac.config import settings as _s
+
+    # Check which vLLM endpoints are alive and what models they serve
+    loaded_names: list[str] = []
+    gpu_label = "Local GPU (vLLM)"
+    vllm_ok = False
+    vram_used = 0.0
+    vram_total = 0.0
+
+    urls_seen: set[str] = set()
+    for info in DEFAULT_MODELS.values():
+        url = getattr(_s, info.get("url_key", "vllm_speed_url"), _s.vllm_base_url)
+        if url in urls_seen:
+            continue
+        urls_seen.add(url)
+        try:
+            async with _httpx.AsyncClient(timeout=3) as _c:
+                r = await _c.get(f"{url}/v1/models")
+                if r.status_code == 200:
+                    vllm_ok = True
+                    data = r.json()
+                    for m in data.get("data", []):
+                        if m.get("id") and m["id"] not in loaded_names:
+                            loaded_names.append(m["id"])
+        except Exception:
+            pass
+
+    # GPU VRAM via nvidia-smi if available
+    try:
+        import subprocess, shutil
+        if shutil.which("nvidia-smi"):
+            out = subprocess.check_output(
+                ["nvidia-smi", "--query-gpu=name,memory.used,memory.total",
+                 "--format=csv,noheader,nounits"],
+                timeout=3, text=True
+            ).strip().split(",")
+            if len(out) == 3:
+                gpu_label = out[0].strip()
+                vram_used = round(int(out[1].strip()) / 1024, 1)
+                vram_total = round(int(out[2].strip()) / 1024, 1)
+    except Exception:
+        pass
+
+    node_status = "active" if vllm_ok else "offline"
+    if not loaded_names:
+        loaded_names = [info["served_name"] for info in DEFAULT_MODELS.values()]
 
     return HealthResponse(
         status="healthy",
         uptime_seconds=int(time.time() - _START_TIME),
-        version="1.0.0",
+        version="2.0.0",
         nodes=[NodeHealth(
-            id="hf-inference",
-            gpu="HuggingFace Serverless",
-            models_loaded=model_names,
-            status="active",
-            context_window=8192,
+            id="local-gpu",
+            gpu=gpu_label,
+            vram_used_gb=vram_used,
+            vram_total_gb=vram_total,
+            models_loaded=loaded_names,
+            status=node_status,
+            context_window=4096,
         )],
-        models_loaded=len(DEFAULT_MODELS),
+        models_loaded=len(loaded_names),
         models_total=len(DEFAULT_MODELS),
     )

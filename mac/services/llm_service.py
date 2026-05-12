@@ -576,7 +576,7 @@ async def _completions_to_chat_stream(
     }
     request_id = generate_request_id("mac-chat")
     done_sent = False
-    async with httpx.AsyncClient(timeout=settings.vllm_timeout) as client:
+    async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, read=None)) as client:
         try:
             async with client.stream(
                 "POST", _api_url(base_url, "/v1/completions"), json=payload, headers=_auth_headers()
@@ -666,7 +666,10 @@ async def chat_completion_stream(
         payload["stop"] = stop if isinstance(stop, list) else [stop]
 
     done_sent = False
-    async with httpx.AsyncClient(timeout=settings.vllm_timeout) as client:
+    # Use no read-timeout for streaming — first token can take time on model warmup.
+    # Connect timeout is kept at 30s to detect dead containers quickly.
+    stream_timeout = httpx.Timeout(30.0, read=None)
+    async with httpx.AsyncClient(timeout=stream_timeout) as client:
         try:
             async with client.stream("POST", _api_url(base_url, "/v1/chat/completions"), json=payload, headers=_auth_headers()) as resp:
                 if resp.status_code != 200:
@@ -707,9 +710,9 @@ async def chat_completion_stream(
                         if finish and not done_sent:
                             done_sent = True
                             yield "data: [DONE]\n\n"
-                except (httpx.RemoteProtocolError, httpx.ReadError):
+                except (httpx.RemoteProtocolError, httpx.ReadError, httpx.ReadTimeout, httpx.ConnectTimeout):
                     pass
-        except (httpx.RemoteProtocolError, httpx.ReadError):
+        except (httpx.RemoteProtocolError, httpx.ReadError, httpx.ReadTimeout, httpx.ConnectTimeout):
             pass
     if not done_sent:
         yield "data: [DONE]\n\n"
