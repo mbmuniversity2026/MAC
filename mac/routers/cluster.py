@@ -67,6 +67,7 @@ class RegisterRequest(BaseModel):
     ram_total_mb: Optional[int] = None
     cpu_cores: Optional[int] = None
     tags: Optional[str] = None  # e.g. "llm,notebook,embedding"
+    vllm_model: Optional[str] = None  # model ID the worker intends to serve
 
 
 class RegisterResponse(BaseModel):
@@ -206,6 +207,31 @@ async def register_worker(body: RegisterRequest, db: AsyncSession = Depends(get_
 
     enroll.used = True
     enroll.used_by_node_id = node.id
+
+    # Pre-create a "loading" deployment so the model appears in the list
+    # immediately. Status is updated to "ready" by the heartbeat once vLLM is up.
+    if body.vllm_model:
+        existing_dep = (await db.execute(
+            select(NodeModelDeployment).where(
+                NodeModelDeployment.node_id == node.id,
+                NodeModelDeployment.model_id == body.vllm_model,
+            )
+        )).scalar_one_or_none()
+        if existing_dep:
+            existing_dep.status = "loading"
+        else:
+            db.add(NodeModelDeployment(
+                node_id=node.id,
+                model_id=body.vllm_model,
+                model_name=body.vllm_model.split("/")[-1],
+                served_name=body.vllm_model,
+                vllm_port=body.port or 8001,
+                gpu_memory_util=0.85,
+                max_model_len=8192,
+                status="loading",
+                deployed_by="worker-agent",
+            ))
+
     await db.commit()
 
     return RegisterResponse(

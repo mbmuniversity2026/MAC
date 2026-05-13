@@ -242,6 +242,7 @@ def main() -> None:
             "ram_total_mb":     ram_mb,
             "cpu_cores":        cpu_cores,
             "tags":             f"llm,{engine}",
+            "vllm_model":       vllm_model,
         }
         for attempt in range(1, REGISTER_RETRIES + 1):
             resp, status = _post(f"{master_url}/api/v1/cluster/register", payload)

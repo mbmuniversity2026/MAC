@@ -89,6 +89,13 @@ services:
       - MAC_STATE_FILE=/data/mac_worker_state.json
     volumes:
       - worker-state:/data
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
     logging:
       driver: "json-file"
       options:

@@ -109,26 +109,32 @@ async def list_models(
                 .join(NodeModelDeployment, NodeModelDeployment.node_id == WorkerNode.id)
                 .where(
                     WorkerNode.status == "active",
-                    NodeModelDeployment.status == "ready",
+                    NodeModelDeployment.status.in_(["ready", "loading"]),
                 )
             )
             rows = (await db.execute(stmt)).all()
             existing_ids = {m.id for m in models}
             for node, dep in rows:
-                if _worker_stale(node.last_heartbeat):
+                # For "loading" deployments show them even if heartbeat is stale
+                # (the node may have just registered and vLLM is still loading).
+                # For "ready" deployments require a fresh heartbeat.
+                if dep.status == "ready" and _worker_stale(node.last_heartbeat):
                     continue
                 if dep.model_id in existing_ids:
                     continue
                 existing_ids.add(dep.model_id)
-                gpu_label = f"{node.gpu_name} · {node.gpu_vram_mb // 1024}GB" if node.gpu_vram_mb else node.gpu_name or "GPU"
+                m_status = "loaded" if dep.status == "ready" else "loading"
+                m_name = dep.model_name or _short_name(dep.model_id)
+                if dep.status == "loading":
+                    m_name += " (loading…)"
                 models.append(ModelInfo(
                     id=dep.model_id,
-                    name=dep.model_name or _short_name(dep.model_id),
+                    name=m_name,
                     model_type="chat",
                     specialty=f"Worker: {node.name}",
                     parameters="",
                     context_length=dep.max_model_len or 4096,
-                    status="loaded",
+                    status=m_status,
                     capabilities=["chat"],
                     node_name=node.name,
                 ))
