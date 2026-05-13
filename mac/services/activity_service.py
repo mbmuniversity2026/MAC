@@ -28,6 +28,7 @@ _ICONS = {
     "video":      "🎬",
     "thumbnail":  "🖼",
     "voice":      "🎙",
+    "mbmbook":    "📒",
     "system":     "🔧",
     "default":    "•",
 }

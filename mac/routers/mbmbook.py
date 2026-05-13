@@ -97,6 +97,13 @@ async def start_session(
     """Allocate or reconnect a Docker workspace container."""
     username = getattr(current_user, "name", "") or getattr(current_user, "username", "") or current_user.id
     session = await svc.start_session(db, current_user.id, username)
+    try:
+        from mac.services import activity_service as _act
+        from datetime import datetime, timezone, timedelta
+        _ist = datetime.now(timezone(timedelta(hours=5, minutes=30))).strftime("%d/%m/%Y %H:%M:%S IST")
+        await _act.log("mbmbook", f"[{_ist}] {current_user.name or current_user.roll_number} ENTERED MBM Book IDE — container: {session.container_name or 'starting'}")
+    except Exception:
+        pass
     return _session_dict(session)
 
 
@@ -107,6 +114,13 @@ async def stop_session(
 ):
     """Stop the container. Workspace volume is kept."""
     await svc.stop_session(db, current_user.id)
+    try:
+        from mac.services import activity_service as _act
+        from datetime import datetime, timezone, timedelta
+        _ist = datetime.now(timezone(timedelta(hours=5, minutes=30))).strftime("%d/%m/%Y %H:%M:%S IST")
+        await _act.log("mbmbook", f"[{_ist}] {current_user.name or current_user.roll_number} EXITED MBM Book IDE — container stopped")
+    except Exception:
+        pass
     return {"status": "stopped"}
 
 
@@ -120,6 +134,37 @@ async def get_session(
     if not session:
         return {"session": None}
     return {"session": _session_dict(session)}
+
+
+class ActivityBody(BaseModel):
+    event: str
+    detail: str = ""
+    ist: str = ""
+
+
+@router.post("/activity")
+async def log_activity(
+    body: ActivityBody,
+    current_user: User = Depends(get_current_user),
+):
+    """Log a client-side MBM Book activity event (entry, exit, fullscreen, etc.).
+    Events are written to the server log and pushed to the admin activity stream."""
+    import logging
+    _log = logging.getLogger("mbmbook.activity")
+    _log.info(
+        "[MBM Book] event=%s user=%s (%s) ist=%s detail=%s",
+        body.event, current_user.roll_number, current_user.name, body.ist, body.detail,
+    )
+    # Push to admin activity SSE stream
+    try:
+        from mac.services import activity_service
+        await activity_service.log(
+            "mbmbook",
+            f"[{body.ist}] {current_user.name or current_user.roll_number} — {body.event}: {body.detail}",
+        )
+    except Exception:
+        pass
+    return {"ok": True}
 
 
 @router.delete("/workspace")

@@ -15,7 +15,7 @@ from mac.schemas.chat import (
     STTResponse, TTSRequest,
 )
 from mac.services import llm_service
-from mac.services.usage_service import log_request
+from mac.services.usage_service import log_request, log_request_standalone
 from mac.services import guardrail_service
 from mac.middleware.rate_limit import check_rate_limit
 from mac.middleware.feature_gate import feature_required
@@ -78,10 +78,11 @@ async def chat(
                     except Exception:
                         pass
                 yield chunk
-            # Log usage after stream completes (db session is still alive per FastAPI lifecycle)
+            # Log usage after stream completes using a standalone session —
+            # the request-scoped `db` is closed before the generator finishes.
             try:
-                await log_request(
-                    db, user.id, _model_used[0], "/query/chat",
+                await log_request_standalone(
+                    user.id, _model_used[0], "/query/chat",
                     tokens_in=_tokens_in,
                     tokens_out=_tokens_out[0],
                     latency_ms=int((time.time() - _t_start) * 1000),

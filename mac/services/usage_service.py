@@ -40,7 +40,27 @@ async def log_request(
         request_id=request_id,
     )
     db.add(log)
-    await db.flush()
+    await db.commit()
+
+
+async def log_request_standalone(
+    user_id: str,
+    model: str,
+    endpoint: str,
+    tokens_in: int,
+    tokens_out: int,
+    latency_ms: int,
+    status_code: int,
+    request_id: str,
+):
+    """Log a request using an independent DB session — safe to call from streaming generators
+    where the request-scoped session is already closed."""
+    from mac.database import async_session
+    async with async_session() as db:
+        await log_request(
+            db, user_id, model, endpoint,
+            tokens_in, tokens_out, latency_ms, status_code, request_id,
+        )
 
 
 async def get_tokens_used_today(db: AsyncSession, user_id: str) -> int:

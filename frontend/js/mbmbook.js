@@ -38,6 +38,63 @@ const _RUNMAP = {
   go:'go run', rust:'rustc $$F -o /tmp/out && /tmp/out', shell:'bash',
 };
 
+// ── IST timestamp helper ──────────────────────────────────────
+function _mbISTNow() {
+  return new Date().toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hour12: false,
+  });
+}
+
+// ── Log admin event (fire-and-forget) ────────────────────────
+function _mbLogAdmin(event, detail) {
+  try {
+    apiJson('/mbmbook/activity', {
+      method: 'POST',
+      body: JSON.stringify({ event, detail, ist: _mbISTNow() }),
+    }).catch(() => {});
+  } catch {}
+}
+
+// ── Theme helpers ─────────────────────────────────────────────
+function _mbIsDark() {
+  const t = document.documentElement.getAttribute('data-theme') || 'warm';
+  return t === 'dark';
+}
+
+function _mbApplyTheme() {
+  const dark = _mbIsDark();
+  const s = document.getElementById('mb-style');
+  if (!s) return;
+  if (dark) {
+    document.documentElement.style.setProperty('--mb-bg',      '#0d1117');
+    document.documentElement.style.setProperty('--mb-surface', '#161b22');
+    document.documentElement.style.setProperty('--mb-border',  '#30363d');
+    document.documentElement.style.setProperty('--mb-hover',   '#21262d');
+    document.documentElement.style.setProperty('--mb-fg',      '#e6edf3');
+    document.documentElement.style.setProperty('--mb-muted',   '#8b949e');
+    document.documentElement.style.setProperty('--mb-tab-bg',  '#1c2128');
+    document.documentElement.style.setProperty('--mb-toolbar', '#13161d');
+  } else {
+    document.documentElement.style.setProperty('--mb-bg',      '#f6f8fa');
+    document.documentElement.style.setProperty('--mb-surface', '#ffffff');
+    document.documentElement.style.setProperty('--mb-border',  '#d0d7de');
+    document.documentElement.style.setProperty('--mb-hover',   '#eaeef2');
+    document.documentElement.style.setProperty('--mb-fg',      '#1f2328');
+    document.documentElement.style.setProperty('--mb-muted',   '#656d76');
+    document.documentElement.style.setProperty('--mb-tab-bg',  '#f6f8fa');
+    document.documentElement.style.setProperty('--mb-toolbar', '#f6f8fa');
+  }
+  // Update Monaco theme
+  if (_mb.editorReady && _mb.editor && window.monaco) {
+    monaco.editor.setTheme(dark ? 'vs-dark' : 'vs');
+  }
+}
+
+let _mbThemeObserver = null;
+
 // ── Entry point (called by core.js render) ────────────────────
 function renderMBMBook() {
   const el = document.getElementById('page-content');
@@ -48,6 +105,37 @@ function renderMBMBook() {
   _mbBind();
   _mbInitEditor();
   _mbCheckSession();
+  _mbApplyTheme();
+
+  // Watch for theme changes
+  _mbThemeObserver = new MutationObserver(() => _mbApplyTheme());
+  _mbThemeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+  // Go fullscreen — requires user gesture; try immediately (works when triggered by nav click)
+  _mbEnterFullscreen();
+
+  // Log admin entry
+  _mbLogAdmin('mbmbook_enter', `${(state.user && state.user.name) || 'User'} opened MBM Book IDE`);
+}
+
+function _mbEnterFullscreen() {
+  const el = document.documentElement;
+  const req = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen;
+  if (req) {
+    req.call(el).catch(() => {
+      // Browser blocked auto-fullscreen — show the fullscreen button prominently
+      const btn = document.getElementById('mb-fs-btn');
+      if (btn) { btn.style.display = ''; btn.style.animation = 'pulse 1s 3'; }
+    });
+  }
+  document.addEventListener('fullscreenchange', _mbFsChange, { once: false });
+}
+
+function _mbFsChange() {
+  if (!document.fullscreenElement) {
+    // User pressed Esc — log admin exit
+    _mbLogAdmin('mbmbook_exit', `${(state.user && state.user.name) || 'User'} exited MBM Book fullscreen`);
+  }
 }
 
 // ── Layout HTML ───────────────────────────────────────────────
@@ -98,6 +186,9 @@ function _mbLayout() {
       </div>
       <button class="mb-btn mb-btn-start" id="mb-start-btn" onclick="_mbStartSession()">▶ Start</button>
       <button class="mb-btn mb-btn-stop" id="mb-stop-btn" onclick="_mbStopSession()" style="display:none">■ Stop</button>
+      <button class="mb-btn mb-btn-icon" id="mb-fs-btn" onclick="_mbEnterFullscreen()" title="Enter fullscreen (F11)" style="display:none">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+      </button>
     </div>
   </div>
 
@@ -737,6 +828,12 @@ async function _mbRunFile() {
 
 // ── New file / folder ─────────────────────────────────────────
 async function _mbNewFile() {
+  if (!_mb.session || _mb.session.status !== 'running') {
+    _mbTermWrite('\x1b[33mStart a session first (click ▶ Start).\x1b[0m\r\n');
+    const btn = document.getElementById('mb-start-btn');
+    if (btn) { btn.style.outline = '2px solid #818cf8'; setTimeout(() => btn.style.outline = '', 2000); }
+    return;
+  }
   const name = prompt('New file name:', 'main.py');
   if (!name) return;
   const path = '/workspace/' + name.replace(/^\/workspace\//, '');
@@ -748,7 +845,7 @@ async function _mbNewFile() {
     await _mbRefreshFiles();
     await _mbOpenFile(path);
   } catch (e) {
-    alert('Error: ' + e.message);
+    _mbTermWrite(`\x1b[31mError creating file: ${e.message}\x1b[0m\r\n`);
   }
 }
 
@@ -954,6 +1051,21 @@ function _mbCleanup() {
   document.removeEventListener('mousemove', _mbDragMove);
   document.removeEventListener('mouseup',   _mbDragEnd);
   document.removeEventListener('keydown',   _mbShortcuts);
+  document.removeEventListener('fullscreenchange', _mbFsChange);
+  if (_mbThemeObserver) { _mbThemeObserver.disconnect(); _mbThemeObserver = null; }
+
+  // Stop container on logout so resources are freed and per-user cleanup happens
+  if (_mb.session && _mb.session.status === 'running') {
+    _mbLogAdmin('mbmbook_logout', `Container stopped on logout for ${(state && state.user && state.user.name) || 'user'} at ${_mbISTNow()}`);
+    // Fire-and-forget — don't block logout
+    try { fetch(`${API}/mbmbook/session/stop`, { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + (state && state.token) } }).catch(() => {}); } catch {}
+  }
+
+  // Exit fullscreen if active
+  if (document.fullscreenElement) {
+    try { document.exitFullscreen(); } catch {}
+  }
+
   if (_mb.editor) { try { _mb.editor.dispose(); } catch {} _mb.editor = null; _mb.editorReady = false; }
   _mb.tabs.forEach(t => { if (t.model) { try { t.model.dispose(); } catch {} } });
   _mb.tabs = []; _mb.activeTab = null; _mb.session = null;
