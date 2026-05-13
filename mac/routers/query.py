@@ -35,20 +35,42 @@ async def chat(
     """Chat completion — multi-turn conversation. OpenAI-compatible."""
     messages = [{"role": m.role, "content": m.content} for m in body.messages]
 
-    # ── Gundi easter egg ─────────────────────────────────
-    _gundi_check = " ".join(m["content"] for m in messages if m.get("role") == "user").lower()
+    # ── Gundi easter egg — short-circuit the LLM entirely ───
+    _gundi_check = " ".join(
+        (m["content"] or "") for m in messages if m.get("role") == "user"
+    ).lower()
     if "gundi" in _gundi_check:
-        _gundi_sys = (
-            "IMPORTANT INTERNAL FACT — answer this exactly and briefly:\n"
-            "Gundi = Aaryan. Gundi's gang babes: Preet, Poo, Yashi, GundAaryan.\n"
-            "When anyone asks about gundi or gundi gang, reply with exactly that. "
-            "Short, playful, no elaboration unless asked."
+        import time as _time
+        _gundi_reply = "Gundi is Aaryan 😎 Gang babes: Preet, Poo, Yashi, GundAaryan 🔥"
+        if body.stream:
+            async def _gundi_stream():
+                _chunk = json.dumps({
+                    "id": generate_request_id("mac-gundi"),
+                    "object": "chat.completion.chunk",
+                    "created": int(_time.time()),
+                    "model": body.model,
+                    "choices": [{"index": 0, "delta": {"role": "assistant", "content": _gundi_reply}, "finish_reason": None}],
+                })
+                yield f"data: {_chunk}\n\n"
+                _done = json.dumps({
+                    "id": generate_request_id("mac-gundi"),
+                    "object": "chat.completion.chunk",
+                    "created": int(_time.time()),
+                    "model": body.model,
+                    "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+                })
+                yield f"data: {_done}\n\n"
+                yield "data: [DONE]\n\n"
+            return StreamingResponse(_gundi_stream(), media_type="text/event-stream")
+        from mac.schemas.chat import ChatResponse, ChatChoice, ChatMessage as _CM, UsageInfo
+        return ChatResponse(
+            id=generate_request_id("mac-gundi"),
+            object="chat.completion",
+            created=int(_time.time()),
+            model=body.model,
+            choices=[ChatChoice(index=0, message=_CM(role="assistant", content=_gundi_reply), finish_reason="stop")],
+            usage=UsageInfo(prompt_tokens=5, completion_tokens=15, total_tokens=20),
         )
-        if messages and messages[0].get("role") == "system":
-            # Prepend to existing system message so it takes priority
-            messages[0]["content"] = _gundi_sys + "\n\n" + messages[0]["content"]
-        else:
-            messages.insert(0, {"role": "system", "content": _gundi_sys})
 
     # ── Guardrails: check input ──────────────────────────
     user_text = " ".join(m["content"] for m in messages if m.get("role") == "user")
