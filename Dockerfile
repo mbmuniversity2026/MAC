@@ -7,7 +7,7 @@ LABEL org.opencontainers.image.authors="mbmuniversity2026 <mbmuniversity2026@gma
 
 WORKDIR /app
 
-# Install system deps (curl + OpenCV headless runtime + insightface ONNX deps)
+# Install system deps (curl + docker CLI + OpenCV headless runtime + insightface ONNX deps)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     gcc g++ \
@@ -17,11 +17,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxrender1 \
     libxext6 \
     libgomp1 \
+    docker.io \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python deps
+# Install Python deps (insightface builds from source — longer timeout)
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --timeout=300 -r requirements.txt
 
 # Pre-bake insightface buffalo_sc model (~80 MB) into /opt so no Docker volume can shadow it.
 # /opt is not mounted by docker-compose.yml → model always available offline after build.
@@ -47,13 +48,13 @@ COPY docker-compose.worker.yml .
 COPY worker_agent.py .
 COPY setup-worker.bat .
 
-# Don't run as root in production
 RUN useradd -m appuser && chown -R appuser:appuser /app
-USER appuser
 
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
   CMD curl -f http://localhost:8000/api/v1 || exit 1
 
-CMD ["sh", "-c", "alembic upgrade head && uvicorn mac.main:app --host 0.0.0.0 --port 8000 --workers ${MAC_WORKERS:-4}"]
+# Run as root so mac-api can access /var/run/docker.sock to spawn MBM Book containers.
+# This is acceptable for a self-hosted LAN-only deployment.
+CMD ["sh", "-c", "chmod 666 /var/run/docker.sock 2>/dev/null || true && alembic upgrade head && uvicorn mac.main:app --host 0.0.0.0 --port 8000 --workers ${MAC_WORKERS:-4}"]

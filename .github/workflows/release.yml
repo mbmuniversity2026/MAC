@@ -4,35 +4,18 @@ on:
   push:
     tags:
       - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version (e.g. 2.1.0)'
+        required: true
+        default: '2.0.0'
 
 permissions:
   contents: write
   packages: write
 
 jobs:
-
-  # ── Docker image → ghcr.io ───────────────────────────────────────────────────
-  docker:
-    name: Docker → GHCR
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Login to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          push: true
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/mac:latest
-            ghcr.io/${{ github.repository_owner }}/mac:${{ github.ref_name }}
 
   # ── Windows installer ────────────────────────────────────────────────────────
   installer:
@@ -44,7 +27,7 @@ jobs:
       - name: Patch version in .iss
         shell: pwsh
         run: |
-          $ver = "${{ github.ref_name }}".TrimStart("v")
+          $ver = if ("${{ github.ref_name }}" -ne "") { "${{ github.ref_name }}".TrimStart("v") } else { "${{ github.event.inputs.version }}" }
           (Get-Content mac-installer.iss -Raw) -replace '#define AppVersion "[^"]*"', "#define AppVersion `"$ver`"" |
             Set-Content mac-installer.iss -NoNewline
 
@@ -53,9 +36,6 @@ jobs:
         run: |
           if (-not (Test-Path "mac-logo.ico")) {
             Copy-Item "frontend\favicon.ico" "mac-logo.ico" -ErrorAction SilentlyContinue
-          }
-          if (-not (Test-Path "download-models.bat")) {
-            "@echo off`r`necho Models are included in Docker images." | Out-File "download-models.bat" -Encoding ascii
           }
           New-Item -ItemType Directory -Force -Path dist | Out-Null
 
@@ -91,7 +71,7 @@ jobs:
   # ── GitHub Release ───────────────────────────────────────────────────────────
   release:
     name: GitHub Release
-    needs: [docker, installer]
+    needs: [installer]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -139,10 +119,16 @@ jobs:
 
             ---
 
-            ### Docker image
-            ```
-            ghcr.io/${{ github.repository_owner }}/mac:${{ github.ref_name }}
-            ghcr.io/${{ github.repository_owner }}/mac:latest
+            ### Docker images (GHCR)
+            ```bash
+            # MAC API server
+            docker pull ghcr.io/mbmuniversity2026/mac:latest
+
+            # MBM Book workspace (per-user IDE containers)
+            docker pull ghcr.io/mbmuniversity2026/mac-workspace:latest
+
+            # Worker agent (GPU satellite nodes)
+            docker pull ghcr.io/mbmuniversity2026/mac-worker:latest
             ```
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}

@@ -1,0 +1,56 @@
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Asia/Kolkata
+ENV HOME=/home/user
+ENV PATH="/home/user/.local/bin:/usr/local/go/bin:/home/user/.cargo/bin:$PATH"
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Core tools
+    curl wget git sudo nano vim less \
+    # Build tools
+    build-essential gcc g++ make cmake \
+    # Python
+    python3 python3-pip python3-venv python3-dev \
+    # Java
+    default-jdk \
+    # Node.js
+    nodejs npm \
+    # Go
+    golang-go \
+    # Rust (via apt, lightweight)
+    cargo rustc \
+    # Utilities
+    zip unzip tar gzip tree htop \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Python packages — all pre-installed for API testing + data science
+RUN pip3 install --no-cache-dir \
+    openai httpx requests aiohttp \
+    numpy pandas matplotlib seaborn \
+    scikit-learn scipy \
+    jupyter ipython \
+    black pylint flake8 \
+    flask fastapi uvicorn \
+    sqlalchemy psycopg2-binary \
+    pillow opencv-python-headless \
+    pydantic rich tabulate \
+    python-dotenv
+
+# Create user with sudo
+RUN useradd -m -s /bin/bash user && \
+    echo "user ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers && \
+    mkdir -p /workspace && \
+    chown user:user /workspace
+
+# Set bash as default interactive shell with nice prompt
+RUN echo 'export PS1="\[\033[01;32m\]mbmbook\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ "' >> /home/user/.bashrc && \
+    echo 'alias ll="ls -la --color=auto"' >> /home/user/.bashrc && \
+    echo 'alias python=python3' >> /home/user/.bashrc && \
+    echo 'export PYTHONPATH=/workspace' >> /home/user/.bashrc
+
+USER user
+WORKDIR /workspace
+
+CMD ["/bin/bash", "--login"]

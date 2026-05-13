@@ -72,6 +72,24 @@ async def verify(body: VerifyRequest, db: AsyncSession = Depends(get_db)):
         )
 
     access_token, refresh_token = await auth_service.create_tokens(db, user)
+
+    try:
+        from mac.services import activity_service as _act
+        from datetime import datetime, timezone, timedelta
+        _ist = datetime.now(timezone(timedelta(hours=5, minutes=30))).strftime("%d/%m/%Y %H:%M:%S IST")
+        await _act.log("auth", f"[{_ist}] {user.name or user.roll_number} ({user.role}) LOGGED IN via student portal")
+    except Exception:
+        pass
+
+    # Pre-warm MBM Book container on login (background, fire-and-forget)
+    try:
+        import asyncio
+        from mac.services import mbmbook_service as _mbsvc
+        _uname = getattr(user, 'name', '') or user.roll_number
+        asyncio.create_task(_mbsvc.start_session(db, user.id, _uname))
+    except Exception:
+        pass
+
     return LoginResponse(
         access_token=access_token,
         refresh_token=refresh_token,
@@ -94,6 +112,23 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
         })
 
     access_token, refresh_token = await auth_service.create_tokens(db, user)
+
+    try:
+        from mac.services import activity_service as _act
+        from datetime import datetime, timezone, timedelta
+        _ist = datetime.now(timezone(timedelta(hours=5, minutes=30))).strftime("%d/%m/%Y %H:%M:%S IST")
+        await _act.log("auth", f"[{_ist}] {user.name or user.roll_number} ({user.role}) LOGGED IN")
+    except Exception:
+        pass
+
+    # Pre-warm MBM Book container on login (background, fire-and-forget)
+    try:
+        import asyncio
+        from mac.services import mbmbook_service as _mbsvc
+        _uname = getattr(user, 'name', '') or user.roll_number
+        asyncio.create_task(_mbsvc.start_session(db, user.id, _uname))
+    except Exception:
+        pass
 
     return LoginResponse(
         access_token=access_token,
@@ -153,6 +188,12 @@ async def logout(
         if payload and payload.get("jti"):
             exp = datetime.fromtimestamp(payload["exp"], tz=timezone.utc)
             await blacklist(payload["jti"], exp)
+    # Stop and delete MBM Book container on logout (fire-and-forget)
+    try:
+        from mac.services import mbmbook_service as _mbsvc
+        await _mbsvc.stop_session(db, user.id)
+    except Exception:
+        pass
     return MessageResponse(message="Successfully logged out")
 
 

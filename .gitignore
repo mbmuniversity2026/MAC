@@ -39,6 +39,10 @@ desktop.ini
 *.swp
 *.swo
 .claude/
+CLAUDE.md
+
+# Nginx SSL certs (auto-generated at runtime)
+nginx/ssl/
 
 # Logs
 *.log

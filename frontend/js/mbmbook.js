@@ -318,9 +318,11 @@ function _mbInjectCSS() {
   .mb-wrap { display:flex;flex-direction:column;height:100%;background:var(--mb-bg);font-family:system-ui,sans-serif;color:var(--mb-fg);overflow:hidden; }
 
   /* Toolbar */
-  .mb-toolbar { display:flex;align-items:center;justify-content:space-between;padding:0 10px;height:40px;background:var(--mb-toolbar);border-bottom:1px solid var(--mb-border);flex-shrink:0; }
-  .mb-toolbar-left,.mb-toolbar-right { display:flex;align-items:center;gap:6px; }
-  .mb-brand { display:flex;align-items:center;gap:6px;font-size:.78rem;font-weight:700;color:var(--mb-fg);padding:0 6px;opacity:.85; }
+  .mb-toolbar { display:flex;align-items:center;justify-content:space-between;padding:0 10px;height:40px;background:var(--mb-toolbar);border-bottom:1px solid var(--mb-border);flex-shrink:0;gap:8px; }
+  .mb-toolbar-left { display:flex;align-items:center;gap:6px;min-width:0;overflow:hidden;flex:1; }
+  .mb-toolbar-right { display:flex;align-items:center;gap:6px;flex-shrink:0; }
+  .mb-brand { display:flex;align-items:center;gap:6px;font-size:.78rem;font-weight:700;color:var(--mb-fg);padding:0 6px;opacity:.85;overflow:hidden;white-space:nowrap;flex-shrink:0; }
+  .mb-brand span { overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:120px; }
   .mb-btn { display:flex;align-items:center;gap:4px;padding:4px 10px;border-radius:5px;font-size:.75rem;font-weight:500;cursor:pointer;border:1px solid var(--mb-border);background:var(--mb-surface);color:var(--mb-fg);transition:all .12s; }
   .mb-btn:hover { background:var(--mb-hover);border-color:var(--mb-accent); }
   .mb-btn-icon { padding:4px 7px; }
@@ -345,7 +347,7 @@ function _mbInjectCSS() {
   .mb-icon-btn:hover { color:var(--mb-fg);background:var(--mb-hover); }
   .mb-file-tree { flex:1;overflow-y:auto;padding:4px 0; }
   .mb-tree-empty { display:flex;flex-direction:column;align-items:center;gap:8px;padding:32px 16px;color:var(--mb-muted);font-size:.75rem;text-align:center; }
-  .mb-tree-item { display:flex;align-items:center;gap:5px;padding:4px 12px;font-size:.78rem;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+  .mb-tree-item { display:flex;align-items:center;gap:5px;padding:4px 12px;font-size:.78rem;cursor:pointer;overflow:hidden;position:relative; }
   .mb-tree-item:hover { background:var(--mb-hover); }
   .mb-tree-item.active { background:var(--mb-accent);background:rgba(129,140,248,.15);color:var(--mb-accent); }
   .mb-tree-file::before { content:'📄';margin-right:2px;font-size:.7rem; }
@@ -411,6 +413,28 @@ function _mbInjectCSS() {
   .mb-term-output::-webkit-scrollbar,.mb-file-tree::-webkit-scrollbar { width:5px; }
   .mb-term-output::-webkit-scrollbar-track,.mb-file-tree::-webkit-scrollbar-track { background:transparent; }
   .mb-term-output::-webkit-scrollbar-thumb,.mb-file-tree::-webkit-scrollbar-thumb { background:#30363d;border-radius:2px; }
+
+  /* Custom modal (fullscreen-safe — replaces window.prompt/confirm) */
+  .mb-modal-overlay { position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:99999;display:flex;align-items:center;justify-content:center;animation:mbFadeIn .15s; }
+  @keyframes mbFadeIn { from{opacity:0} to{opacity:1} }
+  .mb-modal { background:#1c2128;border:1px solid #30363d;border-radius:10px;padding:24px 28px;min-width:320px;max-width:440px;box-shadow:0 20px 60px rgba(0,0,0,.5); }
+  .mb-modal h4 { margin:0 0 14px;font-size:.9rem;font-weight:600;color:#e6edf3; }
+  .mb-modal input { width:100%;padding:8px 12px;border-radius:6px;border:1px solid #30363d;background:#0d1117;color:#e6edf3;font-size:.85rem;outline:none;margin-bottom:16px; }
+  .mb-modal input:focus { border-color:#818cf8; }
+  .mb-modal-btns { display:flex;gap:8px;justify-content:flex-end; }
+  .mb-modal-ok  { padding:7px 18px;border-radius:6px;border:none;background:#818cf8;color:#fff;font-size:.8rem;font-weight:600;cursor:pointer; }
+  .mb-modal-ok:hover { background:#6366f1; }
+  .mb-modal-cancel { padding:7px 18px;border-radius:6px;border:1px solid #30363d;background:#21262d;color:#8b949e;font-size:.8rem;cursor:pointer; }
+  .mb-modal-cancel:hover { background:#30363d;color:#e6edf3; }
+  .mb-modal-danger { background:#f85149; }
+  .mb-modal-danger:hover { background:#d73a49; }
+
+  /* File tree actions */
+  .mb-tree-item { position:relative; }
+  .mb-tree-actions { display:none;position:absolute;right:4px;top:50%;transform:translateY(-50%);gap:2px;align-items:center; }
+  .mb-tree-item:hover .mb-tree-actions { display:flex; }
+  .mb-tree-act-btn { background:none;border:none;color:var(--mb-muted);cursor:pointer;padding:1px 4px;border-radius:3px;font-size:.7rem;line-height:1; }
+  .mb-tree-act-btn:hover { color:var(--mb-fg);background:var(--mb-hover); }
   `;
   document.head.appendChild(s);
 }
@@ -576,7 +600,7 @@ async function _mbStopSession() {
     document.getElementById('mb-stop-btn').style.display = 'none';
     document.getElementById('mb-start-btn').style.display = '';
   } catch (e) {
-    alert('Stop failed: ' + e.message);
+    _mbTermWrite(`\x1b[31mStop failed: ${e.message}\x1b[0m\r\n`);
   }
 }
 
@@ -676,10 +700,53 @@ function _mbFileItem(f) {
   const isDir = f.type === 'dir';
   const cls = isDir ? 'mb-tree-dir' : 'mb-tree-file';
   const active = _mb.activeTab === fullPath ? ' active' : '';
+  const safePath = fullPath.replace(/'/g, "\\'");
   if (isDir) {
-    return `<div class="mb-tree-item ${cls}${active}" style="font-weight:600">${name}/</div>`;
+    return `<div class="mb-tree-item ${cls}${active}" style="font-weight:600" title="${fullPath}">
+      <span style="flex:1">${esc(name)}/</span>
+      <span class="mb-tree-actions">
+        <button class="mb-tree-act-btn" onclick="event.stopPropagation();_mbDeletePath('${safePath}')" title="Delete folder">🗑</button>
+      </span>
+    </div>`;
   }
-  return `<div class="mb-tree-item ${cls}${active}" onclick="_mbOpenFile('${fullPath}')" title="${fullPath}">${name}</div>`;
+  return `<div class="mb-tree-item ${cls}${active}" onclick="_mbOpenFile('${safePath}')" title="${fullPath}">
+    <span style="flex:1;overflow:hidden;text-overflow:ellipsis">${esc(name)}</span>
+    <span class="mb-tree-actions">
+      <button class="mb-tree-act-btn" onclick="event.stopPropagation();_mbDownloadFile('${safePath}')" title="Download">⬇</button>
+      <button class="mb-tree-act-btn" onclick="event.stopPropagation();_mbDeletePath('${safePath}')" title="Delete">🗑</button>
+    </span>
+  </div>`;
+}
+
+function _mbDownloadFile(path) {
+  const a = document.createElement('a');
+  a.href = `${API}/mbmbook/files/download?path=${encodeURIComponent(path)}`;
+  a.download = path.split('/').pop();
+  const headers = { 'Authorization': 'Bearer ' + state.token };
+  fetch(a.href, { headers })
+    .then(r => r.blob())
+    .then(b => {
+      const url = URL.createObjectURL(b);
+      const link = document.createElement('a');
+      link.href = url; link.download = a.download;
+      link.click(); URL.revokeObjectURL(url);
+    })
+    .catch(e => _mbTermWrite(`\x1b[31mDownload failed: ${e.message}\x1b[0m\r\n`));
+}
+
+async function _mbDeletePath(path) {
+  const name = path.split('/').pop();
+  if (!await _mbConfirm(`Delete "${name}"? This cannot be undone.`, true)) return;
+  try {
+    await apiJson('/mbmbook/files?path=' + encodeURIComponent(path), { method: 'DELETE' });
+    // Close tab if open
+    const tabIdx = _mb.tabs.findIndex(t => t.path === path);
+    if (tabIdx >= 0) { _mb.tabs[tabIdx].dirty = false; _mbCloseTab(path); }
+    await _mbRefreshFiles();
+    _mbTermWrite(`\x1b[33mDeleted: ${path}\x1b[0m\r\n`);
+  } catch (e) {
+    _mbTermWrite(`\x1b[31mDelete failed: ${e.message}\x1b[0m\r\n`);
+  }
 }
 
 // ── Tab management ────────────────────────────────────────────
@@ -733,12 +800,12 @@ function _mbActivateTab(path) {
   _mbRenderFileTree();
 }
 
-function _mbCloseTab(path, e) {
+async function _mbCloseTab(path, e) {
   if (e) e.stopPropagation();
   const idx = _mb.tabs.findIndex(t => t.path === path);
   if (idx < 0) return;
   const t = _mb.tabs[idx];
-  if (t.dirty && !confirm('Unsaved changes. Close anyway?')) return;
+  if (t.dirty && !await _mbConfirm('Unsaved changes — close anyway?', true)) return;
   if (t.model) { try { t.model.dispose(); } catch {} }
   _mb.tabs.splice(idx, 1);
 
@@ -834,7 +901,7 @@ async function _mbNewFile() {
     if (btn) { btn.style.outline = '2px solid #818cf8'; setTimeout(() => btn.style.outline = '', 2000); }
     return;
   }
-  const name = prompt('New file name:', 'main.py');
+  const name = await _mbPrompt('New file name:', 'main.py');
   if (!name) return;
   const path = '/workspace/' + name.replace(/^\/workspace\//, '');
   try {
@@ -850,17 +917,21 @@ async function _mbNewFile() {
 }
 
 async function _mbNewFolder() {
-  const name = prompt('New folder name:', 'src');
+  if (!_mb.session || _mb.session.status !== 'running') {
+    _mbTermWrite('\x1b[33mStart a session first.\x1b[0m\r\n'); return;
+  }
+  const name = await _mbPrompt('New folder name:', 'src');
   if (!name) return;
-  const path = '/workspace/' + name;
+  const path = '/workspace/' + name.replace(/^\/workspace\//, '');
   try {
     await apiJson('/mbmbook/files/mkdir', {
       method: 'POST',
       body: JSON.stringify({ path }),
     });
     await _mbRefreshFiles();
+    _mbTermWrite(`\x1b[32mCreated folder: ${path}\x1b[0m\r\n`);
   } catch (e) {
-    alert('Error: ' + e.message);
+    _mbTermWrite(`\x1b[31mError creating folder: ${e.message}\x1b[0m\r\n`);
   }
 }
 
@@ -1042,6 +1113,54 @@ function _mbAnsiToHtml(text) {
     .replace(/\x1b\[[?][0-9]+[hl]/g,'')      // mode changes
     .replace(/\x1b\[[0-9;]*J/g,'')           // clear screen
     .replace(/\x07/g,'');                     // bell
+}
+
+// ── Custom modal (fullscreen-safe, no window.prompt/confirm) ─
+function _mbPrompt(label, defaultVal = '') {
+  return new Promise(resolve => {
+    const ov = document.createElement('div');
+    ov.className = 'mb-modal-overlay';
+    ov.innerHTML = `<div class="mb-modal">
+      <h4>${esc(label)}</h4>
+      <input id="_mbprompt_in" value="${esc(defaultVal)}" autocomplete="off" spellcheck="false">
+      <div class="mb-modal-btns">
+        <button class="mb-modal-cancel" id="_mbprompt_cancel">Cancel</button>
+        <button class="mb-modal-ok" id="_mbprompt_ok">OK</button>
+      </div>
+    </div>`;
+    document.body.appendChild(ov);
+    const inp = ov.querySelector('#_mbprompt_in');
+    inp.focus(); inp.select();
+    const done = v => { ov.remove(); resolve(v); };
+    ov.querySelector('#_mbprompt_ok').onclick     = () => done(inp.value || null);
+    ov.querySelector('#_mbprompt_cancel').onclick = () => done(null);
+    inp.addEventListener('keydown', e => {
+      if (e.key === 'Enter')  done(inp.value || null);
+      if (e.key === 'Escape') done(null);
+    });
+    ov.addEventListener('mousedown', e => { if (e.target === ov) done(null); });
+  });
+}
+
+function _mbConfirm(label, danger = false) {
+  return new Promise(resolve => {
+    const ov = document.createElement('div');
+    ov.className = 'mb-modal-overlay';
+    const okCls = danger ? 'mb-modal-ok mb-modal-danger' : 'mb-modal-ok';
+    ov.innerHTML = `<div class="mb-modal">
+      <h4>${esc(label)}</h4>
+      <div class="mb-modal-btns">
+        <button class="mb-modal-cancel" id="_mbconf_cancel">Cancel</button>
+        <button class="${okCls}" id="_mbconf_ok">OK</button>
+      </div>
+    </div>`;
+    document.body.appendChild(ov);
+    const done = v => { ov.remove(); resolve(v); };
+    ov.querySelector('#_mbconf_ok').onclick     = () => done(true);
+    ov.querySelector('#_mbconf_cancel').onclick = () => done(false);
+    ov.addEventListener('mousedown', e => { if (e.target === ov) done(false); });
+    ov.addEventListener('keydown', e => { if (e.key === 'Escape') done(false); });
+  });
 }
 
 // ── Cleanup (called by core.js logout) ────────────────────────

@@ -35,6 +35,21 @@ async def chat(
     """Chat completion — multi-turn conversation. OpenAI-compatible."""
     messages = [{"role": m.role, "content": m.content} for m in body.messages]
 
+    # ── Gundi easter egg ─────────────────────────────────
+    _gundi_check = " ".join(m["content"] for m in messages if m.get("role") == "user").lower()
+    if "gundi" in _gundi_check:
+        _gundi_sys = (
+            "IMPORTANT INTERNAL FACT — answer this exactly and briefly:\n"
+            "Gundi = Aaryan. Gundi's gang babes: Preet, Poo, Yashi, GundAaryan.\n"
+            "When anyone asks about gundi or gundi gang, reply with exactly that. "
+            "Short, playful, no elaboration unless asked."
+        )
+        if messages and messages[0].get("role") == "system":
+            # Prepend to existing system message so it takes priority
+            messages[0]["content"] = _gundi_sys + "\n\n" + messages[0]["content"]
+        else:
+            messages.insert(0, {"role": "system", "content": _gundi_sys})
+
     # ── Guardrails: check input ──────────────────────────
     user_text = " ".join(m["content"] for m in messages if m.get("role") == "user")
     if user_text:
@@ -90,7 +105,16 @@ async def chat(
                     request_id=_req_id,
                 )
             except Exception:
-                pass  # Non-critical — don't break the response
+                pass
+            try:
+                from mac.services import activity_service as _act
+                from datetime import datetime, timezone, timedelta
+                _ist = datetime.now(timezone(timedelta(hours=5, minutes=30))).strftime("%d/%m/%Y %H:%M:%S IST")
+                _preview = (messages[-1].get("content", "") if messages else "")[:60]
+                _uname = getattr(user, 'name', None) or getattr(user, 'roll_number', user.id)
+                await _act.log("chat", f"[{_ist}] {_uname} — chat ({_model_used[0]}): {_preview}…")
+            except Exception:
+                pass
 
         return StreamingResponse(stream_gen(), media_type="text/event-stream")
 
@@ -122,6 +146,16 @@ async def chat(
         status_code=200,
         request_id=result["id"],
     )
+
+    # Log chat activity
+    try:
+        from mac.services import activity_service as _act
+        from datetime import datetime, timezone, timedelta
+        _ist = datetime.now(timezone(timedelta(hours=5, minutes=30))).strftime("%d/%m/%Y %H:%M:%S IST")
+        _preview = (messages[-1].get("content", "") if messages else "")[:60]
+        await _act.log("chat", f"[{_ist}] {user.name or user.roll_number} — chat ({result['model']}): {_preview}…")
+    except Exception:
+        pass
 
     # Build response
     choice_data = result["choices"][0]
