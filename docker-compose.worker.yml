@@ -1,19 +1,24 @@
 # ═══════════════════════════════════════════════════════════════════════════════
-#  MAC Worker Node — vLLM GPU Inference + Worker Agent
+#  MAC Worker Node — GPU Inference + Worker Agent
 #  MBM AI Cloud · MBM University, Jodhpur
 #
-#  Usage (after filling .env.worker):
-#    docker compose -f docker-compose.worker.yml --env-file .env.worker up -d
+#  SETUP (worker PC):
+#    1. Clone repo:  git clone https://github.com/mbmuniversity2026/MAC.git
+#    2. Copy env:    copy .env.worker.example .env.worker
+#    3. Edit:        notepad .env.worker   (set HOST_URL, ENROLL_TOKEN, MODEL)
+#    4. Run:         docker compose -f docker-compose.worker.yml --env-file .env.worker up -d
+#    5. Admin approves the node in MAC Admin → Cluster panel
 #
-#  OR pull pre-built image from ghcr.io (no build needed on worker PC):
-#    Set MAC_WORKER_IMAGE=ghcr.io/mbmuniversity2026/mac-worker:latest in .env.worker
+#  OR use the setup script:
+#    Windows:  setup-worker.bat
 #
-#  Recommended AWQ models (set VLLM_MODEL in .env.worker):
-#    solidrust/Mistral-7B-Instruct-v0.3-AWQ   Creative/Chat    (~4.5 GB, AWQ)
-#    Qwen/Qwen2.5-7B-Instruct-AWQ             General Chat     (~5 GB,   AWQ)
-#    Qwen/Qwen2.5-Coder-7B-Instruct-AWQ       Programming      (~5 GB,   AWQ)
-#    deepseek-ai/DeepSeek-R1-Distill-Qwen-7B  Math/Reasoning   (~8 GB,   fp16)
-#    Qwen/Qwen2-VL-7B-Instruct                Vision/Images    (~8 GB,   fp16)
+# ── Recommended models (set VLLM_MODEL) ───────────────────────────────────────
+#  Gemma 3 4B (default)       google/gemma-3-4b-it            ~8 GB fp16
+#  Gemma 3 4B AWQ             mlabonne/gemma-3-4b-it-AWQ      ~4 GB AWQ
+#  Mistral 7B AWQ             solidrust/Mistral-7B-Instruct-v0.3-AWQ  ~4.5 GB
+#  Qwen 2.5 7B AWQ            Qwen/Qwen2.5-7B-Instruct-AWQ    ~5 GB
+#  DeepSeek R1 7B AWQ         solidrust/DeepSeek-R1-Distill-Qwen-7B-AWQ  ~5 GB
+#  Qwen 2.5 Coder 7B AWQ      Qwen/Qwen2.5-Coder-7B-Instruct-AWQ ~5 GB
 # ═══════════════════════════════════════════════════════════════════════════════
 
 services:
@@ -28,20 +33,19 @@ services:
       - HF_HOME=/root/.cache/huggingface
       - HF_TOKEN=${HF_TOKEN:-}
       - TRANSFORMERS_OFFLINE=${TRANSFORMERS_OFFLINE:-0}
-      - HF_DATASETS_OFFLINE=${HF_DATASETS_OFFLINE:-0}
       - HF_HUB_OFFLINE=${TRANSFORMERS_OFFLINE:-0}
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
     volumes:
       - hf-cache:/root/.cache/huggingface
     command: >
-      --model ${VLLM_MODEL:-solidrust/Mistral-7B-Instruct-v0.3-AWQ}
+      --model ${VLLM_MODEL:-mlabonne/gemma-3-4b-it-AWQ}
       --port ${VLLM_PORT:-8001}
       --gpu-memory-utilization ${VLLM_GPU_MEM:-0.85}
       --max-model-len ${VLLM_MAX_LEN:-8192}
       --trust-remote-code
       --dtype ${VLLM_DTYPE:-auto}
-      --served-model-name ${VLLM_SERVED_NAME:-${VLLM_MODEL:-solidrust/Mistral-7B-Instruct-v0.3-AWQ}}
+      --served-model-name ${VLLM_SERVED_NAME:-gemma-3-4b}
     deploy:
       resources:
         reservations:
@@ -66,7 +70,7 @@ services:
 
   # ── MAC Worker Agent ─────────────────────────────────────────────────────────
   # Registers this PC with the MAC host and sends live heartbeats.
-  # Uses pre-built image from ghcr.io — no build step needed on worker PC.
+  # Pre-built image — no local build needed.
   worker-agent:
     image: ${MAC_WORKER_IMAGE:-ghcr.io/mbmuniversity2026/mac-worker:latest}
     container_name: mac-worker-agent
@@ -75,12 +79,12 @@ services:
       vllm:
         condition: service_started
     environment:
-      - MAC_MASTER_URL=${MAC_MASTER_URL:-https://10.10.12.115}
+      - MAC_MASTER_URL=${MAC_MASTER_URL}
       - MAC_ENROLL_TOKEN=${MAC_ENROLL_TOKEN}
       - MAC_WORKER_NAME=${MAC_WORKER_NAME:-worker-pc}
       - MAC_WORKER_IP=${MAC_WORKER_IP:-}
       - MAC_VLLM_PORT=${VLLM_PORT:-8001}
-      - MAC_VLLM_MODEL=${VLLM_MODEL:-solidrust/Mistral-7B-Instruct-v0.3-AWQ}
+      - MAC_VLLM_MODEL=${VLLM_MODEL:-mlabonne/gemma-3-4b-it-AWQ}
       - MAC_VLLM_URL=http://vllm:${VLLM_PORT:-8001}
       - MAC_GPU_NAME=${MAC_GPU_NAME:-}
       - MAC_GPU_VRAM_MB=${MAC_GPU_VRAM_MB:-0}

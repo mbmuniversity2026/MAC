@@ -193,6 +193,10 @@ function navigate(page) {
   if (state.page === 'notebooks' && page !== 'notebooks') {
     _nbDisposeEditors();
   }
+  // Stop dashboard refresh timer when leaving
+  if (state.page === 'dashboard' && page !== 'dashboard' && typeof _dashCleanup === 'function') {
+    _dashCleanup();
+  }
   state.page = page;
   window.history.pushState({}, '', page === 'login' ? '/' : `#${page}`);
   if (page !== 'login' && page !== 'set-password') localStorage.setItem('mac_last_page', page);
