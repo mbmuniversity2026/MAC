@@ -53,7 +53,7 @@ async function renderSettings() {
       </div>
       <div class="settings-card">
         <h3><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>API Key</h3>
-        <p style="font-size:.85rem;color:var(--muted);margin-bottom:12px">Use this key in your projects to call MAC APIs from anywhere.</p>
+        <p style="font-size:.85rem;color:var(--muted);margin-bottom:12px">Use this key in MBM Book (Jupyter) or any OpenAI-compatible client to call MAC models directly.</p>
         <div class="api-key-box">
           <code id="api-key-display">${esc(u.api_key || 'N/A')}</code>
           <button class="btn btn-sm btn-outline copy-btn" onclick="navigator.clipboard.writeText(document.getElementById('api-key-display').textContent).then(()=>{this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)})">Copy</button>
@@ -63,6 +63,25 @@ async function renderSettings() {
           <button class="btn btn-sm btn-outline" id="test-key-btn">Test Key</button>
           <span id="key-test-msg" style="font-size:.85rem"></span>
         </div>
+        <details style="margin-top:14px;border:1px solid var(--border);border-radius:10px;padding:10px 14px">
+          <summary style="cursor:pointer;font-size:.82rem;font-weight:600;color:var(--accent);user-select:none;list-style:none">Use in MBM Book (Python)</summary>
+          <div style="margin-top:10px">
+            <p style="font-size:.78rem;color:var(--muted);margin:0 0 8px">Paste this in a Jupyter cell inside MBM Book. Replace the API key with yours above.</p>
+            <pre id="api-code-snippet" style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px;font-size:.75rem;overflow-x:auto;margin:0;white-space:pre;line-height:1.5">from openai import OpenAI
+
+client = OpenAI(
+    base_url="http://mac-api:8000/v1",
+    api_key="${esc(u.api_key || 'YOUR_API_KEY')}",
+)
+
+response = client.chat.completions.create(
+    model="qwen2.5:7b",
+    messages=[{"role": "user", "content": "Explain neural networks briefly"}],
+)
+print(response.choices[0].message.content)</pre>
+            <button class="btn btn-sm btn-outline" style="margin-top:8px" onclick="navigator.clipboard.writeText(document.getElementById('api-code-snippet').textContent).then(()=>{this.textContent='Copied!';setTimeout(()=>this.textContent='Copy Snippet',1500)})">Copy Snippet</button>
+          </div>
+        </details>
       </div>
     </div>`;
 

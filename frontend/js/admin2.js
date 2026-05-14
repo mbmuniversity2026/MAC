@@ -275,35 +275,89 @@ async function renderAdminScopedKeys() {
 /* 
    ADMIN "" Audit Log
     */
+let _auditEs = null;
+
 async function renderAdminAuditLog() {
   const el = document.getElementById('admin-content');
-  try {
-    const data = await apiJson('/notifications/audit-logs?per_page=100');
-    const logs = data.logs || [];
-    el.innerHTML = `
-      <div class="admin-header">
-        <h2>Audit Log <span class="badge" class="badge-neutral" style="font-size:.75rem;vertical-align:middle">${logs.length}</span></h2>
+  el.innerHTML = `
+    <div class="admin-header">
+      <div><h2>Audit Log</h2><p class="muted" style="margin:0">Real-time log of all platform actions — IST timestamps</p></div>
+      <div style="display:flex;gap:8px">
+        <select id="audit-filter" class="input" style="width:auto;font-size:.8rem;padding:6px 10px">
+          <option value="">All Categories</option>
+          <option value="auth">Auth</option>
+          <option value="chat">Chat</option>
+          <option value="attendance">Attendance</option>
+          <option value="upload">Upload</option>
+          <option value="quota">Quota</option>
+          <option value="cluster">Cluster</option>
+          <option value="mbmbook">MBM Book</option>
+          <option value="system">System</option>
+        </select>
+        <button class="btn btn-sm btn-outline" onclick="_auditClear()">Clear</button>
       </div>
-      ${logs.length === 0 ? '<div class="empty-state"><p>No audit events recorded yet</p></div>' : `
-      <div class="table-responsive">
-      <table class="data-table">
-        <thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Resource</th><th>Details</th><th>IP</th></tr></thead>
-        <tbody>
-          ${logs.map(l => `
-            <tr>
-              <td class="muted" style="white-space:nowrap">${timeAgo(l.created_at)}</td>
-              <td class="mono">${esc(l.actor_roll || l.actor_id || 'system')}</td>
-              <td><span class="audit-action">${esc(l.action)}</span></td>
-              <td><span class="muted">${esc(l.resource_type || '')}${l.resource_id ? '#' + l.resource_id : ''}</span></td>
-              <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(l.details || '')}">${esc((l.details || '').slice(0, 80))}</td>
-              <td class="mono muted">${esc(l.ip_address || '-')}</td>
-            </tr>
-          `).join('')}
-        </tbody>
-      </table>
-      </div>`}`;
-  } catch (ex) { el.innerHTML = `<div class="error-state"><p>Error: ${esc(ex.message)}</p></div>`; }
+    </div>
+    <div id="audit-feed" style="max-height:72vh;overflow-y:auto;display:flex;flex-direction:column;gap:3px;padding:4px 0">
+      <div class="loading-state"><div class="spinner"></div><span>Loading...</span></div>
+    </div>`;
+
+  if (_auditEs) { _auditEs.close(); _auditEs = null; }
+
+  // Load history first via REST
+  try {
+    const hist = await apiJson('/admin/activity/recent?limit=200');
+    const entries = hist.entries || [];
+    const feed = document.getElementById('audit-feed');
+    if (feed) {
+      feed.innerHTML = '';
+      entries.forEach(e => _auditAppend(e, feed));
+    }
+  } catch {}
+
+  // Then connect SSE for live updates
+  const feed = document.getElementById('audit-feed');
+  if (!feed) return;
+
+  _auditEs = new EventSource(`${API}/admin/activity/stream?token=${encodeURIComponent(state.token)}`);
+  _auditEs.onmessage = e => {
+    try {
+      const entry = JSON.parse(e.data);
+      const filter = document.getElementById('audit-filter');
+      if (filter && filter.value && entry.category !== filter.value) return;
+      _auditAppend(entry, feed, true);
+    } catch {}
+  };
+  _auditEs.onerror = () => {};
+
+  document.getElementById('audit-filter').onchange = function() {
+    const cat = this.value;
+    feed.querySelectorAll('.audit-row').forEach(row => {
+      row.style.display = (!cat || row.dataset.cat === cat) ? '' : 'none';
+    });
+  };
 }
+
+function _auditAppend(e, feed, prepend = false) {
+  const div = document.createElement('div');
+  div.className = 'audit-row';
+  div.dataset.cat = e.category || '';
+  div.style.cssText = 'display:flex;gap:10px;align-items:flex-start;padding:7px 12px;border-radius:8px;background:var(--surface);border:1px solid var(--border);font-size:.81rem;line-height:1.4';
+  div.innerHTML = `<span style="font-size:.95rem;flex-shrink:0">${e.icon || '•'}</span>
+    <span style="color:var(--muted);font-size:.72rem;white-space:nowrap;flex-shrink:0;margin-top:1px;min-width:70px">${esc(e.time || '')}</span>
+    <span style="flex:1;color:var(--text)">${esc(e.message || '')}</span>
+    <span style="color:var(--muted);font-size:.68rem;white-space:nowrap;flex-shrink:0;margin-top:1px">${esc(e.category || '')}</span>`;
+  if (prepend) {
+    feed.insertBefore(div, feed.firstChild);
+    while (feed.children.length > 300) feed.removeChild(feed.lastChild);
+  } else {
+    feed.appendChild(div);
+  }
+}
+
+window._auditClear = () => {
+  const feed = document.getElementById('audit-feed');
+  if (feed) feed.innerHTML = '<div class="muted" style="text-align:center;padding:20px;font-size:.82rem">Feed cleared — new events will appear live</div>';
+};
 
 /* 
    ADMIN "" Guardrails Control Panel

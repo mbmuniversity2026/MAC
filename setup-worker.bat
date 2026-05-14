@@ -53,7 +53,7 @@ set VLLM_MAX_LEN=8192
 if "!MODEL_CHOICE!"=="1" ( set VLLM_MODEL=mlabonne/gemma-3-4b-it-AWQ & set VLLM_SERVED_NAME=gemma-3-4b )
 if "!MODEL_CHOICE!"=="2" ( set VLLM_MODEL=Qwen/Qwen2.5-7B-Instruct-AWQ & set VLLM_SERVED_NAME=qwen2.5-7b )
 if "!MODEL_CHOICE!"=="3" ( set VLLM_MODEL=solidrust/Mistral-7B-Instruct-v0.3-AWQ & set VLLM_SERVED_NAME=mistral-7b )
-if "!MODEL_CHOICE!"=="4" ( set VLLM_MODEL=solidrust/DeepSeek-R1-Distill-Qwen-7B-AWQ & set VLLM_SERVED_NAME=deepseek-r1-7b )
+if "!MODEL_CHOICE!"=="4" ( set VLLM_MODEL=deepseek-ai/DeepSeek-R1-Distill-Qwen-7B & set VLLM_SERVED_NAME=deepseek-r1-7b )
 if "!MODEL_CHOICE!"=="5" (
     set /p VLLM_MODEL= HuggingFace model ID:
     set /p VLLM_SERVED_NAME= Served name:

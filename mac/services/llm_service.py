@@ -121,7 +121,7 @@ _BUILTIN_MODELS: dict[str, dict] = {
         "context_length": 32768,
         "capabilities": ["reasoning", "math", "chat"],
         "category": "reasoning",
-        "served_name": "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
+        "served_name": "deepseek-r1-7b",
         "url_key": "vllm_reasoning_url",
     },
     "gemma3:27b": {

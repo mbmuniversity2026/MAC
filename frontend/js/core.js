@@ -312,6 +312,7 @@ function logout() {
   if (_flagsEs) { try { _flagsEs.close(); } catch {} _flagsEs = null; }
   if (typeof _nbState !== 'undefined') { _nbState.notebooks = []; _nbState.current = null; _nbState.cells = []; _nbState.outputs = {}; }
   if (typeof _mbCleanup === 'function') { try { _mbCleanup(); } catch {} }
+  state.justLoggedOut = true;
   navigate('login');
 }
 

@@ -377,6 +377,16 @@ function authPage() {
     '</div></div>';
   }
 
+  /* ── Logout banner ── */
+  var logoutBanner = '';
+  if (typeof state !== 'undefined' && state.justLoggedOut) {
+    state.justLoggedOut = false;
+    logoutBanner = '<div style="background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.3);border-radius:10px;padding:10px 14px;display:flex;align-items:center;gap:10px;margin-bottom:14px;font-size:.83rem;color:var(--text)">' +
+      '<span style="font-size:1.1rem">✅</span>' +
+      '<span>You have been signed out successfully.</span>' +
+    '</div>';
+  }
+
   /* ── Login view ── */
   return themeBtn + wmLayer + orbs +
   '<div class="auth-page"><div class="auth-card" id="auth-card">' +
@@ -384,6 +394,7 @@ function authPage() {
       '<h1 class="glitch mac-title" data-text="MAC">MAC</h1>' +
       '<p class="card-sub">' + esc(i18n.t('appTagline')) + '</p>' +
     '</div>' +
+    logoutBanner +
     '<div class="auth-err" id="auth-error" style="display:none">' +
       '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>' +
       '<span id="auth-error-msg"></span>' +

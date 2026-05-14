@@ -338,8 +338,8 @@ async function renderAdminKeys() {
             <tr>
               <td class="mono bold">${esc(k.roll_number)}</td>
               <td>${esc(k.name)}</td>
-              <td class="mono">${esc(k.prefix || k.api_key_prefix || '---')}</td>
-              <td>${k.active !== false ? '<span class="dot-success"></span> Active' : '<span class="dot-error"></span> Revoked'}</td>
+              <td class="mono">${esc(k.key_prefix || '---')}</td>
+              <td>${k.status === 'active' ? '<span class="dot-success"></span> Active' : '<span class="dot-error"></span> Revoked'}</td>
               <td>
                 <button class="btn btn-sm btn-danger-outline revoke-key" data-roll="${esc(k.roll_number)}">Revoke</button>
               </td>
@@ -737,9 +737,7 @@ async function renderAdminActivityStream() {
     while (feed.children.length > 200) feed.removeChild(feed.lastChild);
   }
 
-  _activityEs = new EventSource(`${API}/admin/activity/stream`, {
-    // SSE doesn't support auth headers — backend should accept token via cookie or we use polling fallback
-  });
+  _activityEs = new EventSource(`${API}/admin/activity/stream?token=${encodeURIComponent(state.token)}`);
 
   _activityEs.onopen = () => {
     feed.innerHTML = '';
