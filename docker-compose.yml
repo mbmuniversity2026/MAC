@@ -370,7 +370,7 @@ services:
       - ./docker-compose.yml:/app/docker-compose.yml:ro
     working_dir: /app
     entrypoint: >
-      sh -c "pip install -q requests 2>/dev/null; apt-get install -y -qq docker.io 2>/dev/null || true; python watchdog.py"
+      sh -c "apt-get update -qq 2>/dev/null; apt-get install -y -qq docker.io 2>/dev/null || true; python watchdog.py"
     environment:
       - DOCKER_API_VERSION=1.43
     logging:
