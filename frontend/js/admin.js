@@ -62,10 +62,6 @@ async function renderAdmin() {
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
         <span>Knowledge Base</span>
       </div>
-      <div class="admin-tab ${adminTab==='faces'?'active':''}" data-tab="faces">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M3 20c0-4.418 4.03-8 9-8s9 3.582 9 8"/></svg>
-        <span>Face Registry</span>
-      </div>
     </div>
     <div id="admin-content"><div class="loading-state"><div class="spinner"></div><span>Loading...</span></div></div>
   `;
@@ -90,7 +86,6 @@ async function renderAdmin() {
   else if (adminTab === 'video_studio') await renderVideoStudio();
   else if (adminTab === 'terminal') await renderAdminTerminal();
   else if (adminTab === 'knowledge') await renderAdminKnowledge();
-  else if (adminTab === 'faces') await renderAdminFaces();
 }
 
 async function renderAdminOverview() {
@@ -1053,36 +1048,89 @@ async function renderAdminKnowledge() {
   el.innerHTML = '<div class="loading-state"><div class="spinner"></div><span>Loading knowledge base...</span></div>';
   try {
     const docs = await apiJson('/rag/documents');
-    const colls = await apiJson('/rag/collections');
+    const kbDocs = (docs.documents || []);
     el.innerHTML = `
       <div style="padding:20px">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px">
           <div>
             <h2 style="margin:0;font-size:1.1rem">Knowledge Base</h2>
-            <p style="margin:4px 0 0;color:var(--muted);font-size:.82rem">${docs.total || 0} document(s) · ${colls.total || 0} collection(s)</p>
+            <p style="margin:4px 0 0;color:var(--muted);font-size:.82rem">${kbDocs.length} document(s) · Automatically injected into every chat query</p>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input type="file" id="kb-file-input" accept=".pdf,.txt,.md,.docx,.doc,.csv,.json" style="display:none" multiple>
+            <button class="btn btn-sm" id="kb-upload-btn" onclick="document.getElementById('kb-file-input').click()" style="background:var(--accent);color:#fff;border-color:var(--accent)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              Upload to Knowledge Base
+            </button>
           </div>
         </div>
-        <div style="display:grid;gap:10px">
-          ${(docs.documents || []).length === 0
-            ? '<div class="empty-state"><p>No documents uploaded yet. Use the Chat page to attach documents via the paperclip button.</p></div>'
-            : (docs.documents || []).map(d => `
-              <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 18px;display:flex;align-items:center;gap:14px">
-                <div style="width:36px;height:36px;border-radius:8px;background:var(--accent-dim,rgba(212,132,74,.15));display:flex;align-items:center;justify-content:center;flex-shrink:0">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                </div>
-                <div style="flex:1;min-width:0">
-                  <div style="font-weight:600;font-size:.9rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(d.title)}</div>
-                  <div style="font-size:.75rem;color:var(--muted);margin-top:2px">${esc(d.filename)} · ${d.chunk_count || 0} chunks · ${d.status === 'ready' ? '<span style="color:var(--success)">✓ Ready</span>' : esc(d.status)}</div>
-                </div>
-                <div style="font-size:.72rem;color:var(--muted);white-space:nowrap">${d.created_at ? new Date(d.created_at).toLocaleDateString() : ''}</div>
-                <button class="btn btn-sm btn-outline" style="flex-shrink:0;color:var(--danger)" onclick="_adminDeleteDoc('${esc(d.id)}')">Delete</button>
-              </div>`).join('')
+        <div id="kb-upload-status" style="margin-bottom:12px"></div>
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 16px;margin-bottom:16px;font-size:.8rem;color:var(--muted);display:flex;align-items:flex-start;gap:10px">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" style="flex-shrink:0;margin-top:1px"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          <span>Documents uploaded here are embedded into Qdrant and automatically used as context for <strong>all users'</strong> queries. Delete a file to remove it from context.</span>
+        </div>
+        <div style="display:grid;gap:10px" id="kb-doc-list">
+          ${kbDocs.length === 0
+            ? '<div class="empty-state"><p>No documents in knowledge base yet. Upload files to automatically enrich all chat responses with campus context.</p></div>'
+            : kbDocs.map(d => _kbDocRow(d)).join('')
           }
         </div>
       </div>`;
+    document.getElementById('kb-file-input').onchange = _kbUploadFiles;
   } catch (e) {
     el.innerHTML = `<div class="error-state"><p>Failed to load knowledge base: ${esc(e.message)}</p></div>`;
   }
+}
+
+function _kbDocRow(d) {
+  return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 18px;display:flex;align-items:center;gap:14px">
+    <div style="width:36px;height:36px;border-radius:8px;background:var(--accent-dim,rgba(212,132,74,.15));display:flex;align-items:center;justify-content:center;flex-shrink:0">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+    </div>
+    <div style="flex:1;min-width:0">
+      <div style="font-weight:600;font-size:.9rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(d.title)}</div>
+      <div style="font-size:.75rem;color:var(--muted);margin-top:2px">${esc(d.filename)} · ${d.chunk_count || 0} chunks · ${d.status === 'ready' ? '<span style="color:var(--success)">✓ Embedded</span>' : '<span style="color:var(--warning)">' + esc(d.status) + '</span>'}</div>
+    </div>
+    <div style="font-size:.72rem;color:var(--muted);white-space:nowrap">${d.created_at ? new Date(d.created_at).toLocaleDateString() : ''}</div>
+    <button class="btn btn-sm btn-outline" style="flex-shrink:0;color:var(--danger)" onclick="_adminDeleteDoc('${esc(d.id)}')">Delete</button>
+  </div>`;
+}
+
+async function _kbUploadFiles(e) {
+  const files = Array.from(e.target.files);
+  e.target.value = '';
+  if (!files.length) return;
+  const statusEl = document.getElementById('kb-upload-status');
+  const listEl = document.getElementById('kb-doc-list');
+  for (const file of files) {
+    if (statusEl) statusEl.innerHTML = `<div style="color:var(--muted);font-size:.82rem;display:flex;align-items:center;gap:8px"><div class="spinner" style="width:14px;height:14px"></div> Embedding <strong>${esc(file.name)}</strong>…</div>`;
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('title', file.name.replace(/\.[^.]+$/, ''));
+      fd.append('collection', 'knowledge-base');
+      const res = await fetch(API + '/rag/admin/ingest', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${state.token}` },
+        body: fd,
+      });
+      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.detail?.message || 'Upload failed'); }
+      const data = await res.json();
+      showToast(`${file.name} — ${data.chunk_count} chunks embedded`, 'success');
+      if (listEl) {
+        const empty = listEl.querySelector('.empty-state');
+        if (empty) empty.remove();
+        const row = document.createElement('div');
+        row.innerHTML = _kbDocRow({ id: data.document_id, title: data.title, filename: file.name, chunk_count: data.chunk_count, status: data.status, created_at: new Date().toISOString() });
+        listEl.prepend(row.firstElementChild);
+      }
+      // Invalidate KB doc count cache in chat
+      if (typeof _kbDocCount !== 'undefined') window._kbDocCount = -1;
+    } catch (err) {
+      showToast(`${file.name}: ${err.message}`, 'error');
+    }
+  }
+  if (statusEl) statusEl.innerHTML = '';
 }
 async function _adminDeleteDoc(id) {
   if (!confirm('Delete this document from the knowledge base?')) return;

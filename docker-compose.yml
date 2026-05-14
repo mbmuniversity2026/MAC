@@ -35,7 +35,8 @@ services:
       - EMBEDDING_URL=http://vllm-speed:8001
       - QDRANT_URL=http://qdrant:6333
       - SEARXNG_URL=http://searxng:8080
-      - MAC_ENABLED_MODELS=qwen2.5:7b,deepseek-r1:7b,whisper-small,veena-tts
+      - OLLAMA_URL=http://ollama:11434
+      - MAC_ENABLED_MODELS=qwen2.5:7b,deepseek-r1:7b,gemma3:4b,phi4:mini,whisper-small,veena-tts
       - MAC_AUTO_FALLBACK=qwen2.5:7b
       - INSIGHTFACE_HOME=/opt/insightface_models
       - FACE_MATCH_THRESHOLD=${FACE_MATCH_THRESHOLD:-0.35}
@@ -341,6 +342,26 @@ services:
     networks:
       - mac-net
 
+  # ── Ollama — small CPU models (gemma3:4b, phi4:mini) ────
+  # Pull models after first start: docker exec mac-ollama ollama pull gemma3:4b phi4-mini
+  ollama:
+    image: ollama/ollama:latest
+    container_name: mac-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+    restart: unless-stopped
+    networks:
+      - mac-net
+
   searxng:
     image: searxng/searxng:latest
     container_name: mac-searxng
@@ -390,6 +411,7 @@ volumes:
   qdrantdata:
   hf-cache:             # Shared HuggingFace model cache (vLLM + Veena + Whisper)
   tts-voices:
+  ollama-data:          # Ollama model weights (gemma3:4b, phi4-mini)
 
 networks:
   mac-net:

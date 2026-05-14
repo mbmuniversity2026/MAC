@@ -136,6 +136,30 @@ _BUILTIN_MODELS: dict[str, dict] = {
         "url_key": "vllm_intelligence_url",
     },
 
+    # ── Small models via Ollama (CPU-friendly, auto-downloaded) ──
+    "gemma3:4b": {
+        "name": "Gemma 3 4B",
+        "model_type": "chat",
+        "specialty": "Fast lightweight model — quick answers, good for all-round tasks",
+        "parameters": "4B",
+        "context_length": 8192,
+        "capabilities": ["chat", "completion"],
+        "category": "speed",
+        "served_name": "gemma3:4b",
+        "url_key": "ollama_url",
+    },
+    "phi4:mini": {
+        "name": "Phi-4 Mini",
+        "model_type": "chat",
+        "specialty": "Microsoft's compact model — excellent reasoning for its tiny size",
+        "parameters": "3.8B",
+        "context_length": 16384,
+        "capabilities": ["chat", "completion", "reasoning"],
+        "category": "speed",
+        "served_name": "phi4-mini",
+        "url_key": "ollama_url",
+    },
+
     # ── Speech-to-Text (Whisper) ─────────────────────────
     "whisper-small": {
         "name": "Faster-Whisper Small",

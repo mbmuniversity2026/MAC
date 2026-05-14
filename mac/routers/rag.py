@@ -186,6 +186,48 @@ async def get_query_sources(query_id: str):
     return {"query_id": query_id, "message": "Sources are included in the /rag/query response directly."}
 
 
+@router.post("/admin/ingest", response_model=RAGIngestResponse)
+async def admin_ingest_document(
+    file: UploadFile = File(...),
+    title: str = Form(...),
+    collection: str = Form(default="knowledge-base"),
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Admin upload to knowledge base — no feature flag, always available. Embeds into Qdrant."""
+    allowed_ext = (".txt", ".md", ".pdf", ".docx", ".doc", ".csv", ".json")
+    if not any(file.filename.lower().endswith(ext) for ext in allowed_ext):
+        raise HTTPException(status_code=400, detail={"code": "invalid_file", "message": "Supported: TXT, MD, PDF, DOCX, CSV, JSON"})
+
+    content_bytes = await file.read()
+    file_size = len(content_bytes)
+    text_content = content_bytes.decode("utf-8", errors="replace")
+
+    coll = await rag_service.get_collection_by_name(db, collection)
+    if not coll:
+        coll = await rag_service.create_collection(db, collection, f"Knowledge base — {collection}", admin.id)
+
+    doc = await rag_service.ingest_document(
+        db=db,
+        collection_id=coll.id,
+        title=title or file.filename,
+        filename=file.filename,
+        content=text_content,
+        content_type=file.content_type or "text/plain",
+        file_size=file_size,
+        uploaded_by=admin.id,
+        source_tag="knowledge-base",
+    )
+
+    return RAGIngestResponse(
+        document_id=doc.id,
+        title=doc.title,
+        collection=collection,
+        chunk_count=doc.chunk_count,
+        status=doc.status,
+    )
+
+
 @router.post("/collections", response_model=RAGCollectionInfo)
 async def create_collection(
     body: RAGCollectionCreateRequest,

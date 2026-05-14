@@ -60,6 +60,9 @@ class Settings(BaseSettings):
     vllm_reasoning_url: str = "http://localhost:8003"
     vllm_intelligence_url: str = "http://localhost:8004"
 
+    # ── Ollama (small models, CPU-fallback) ───────────────
+    ollama_url: str = "http://localhost:11434"
+
     # ── Whisper / STT ─────────────────────────────────────
     whisper_url: str = "http://localhost:8005"
     whisper_model: str = "Systran/faster-whisper-small"

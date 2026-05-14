@@ -242,8 +242,9 @@ function bindChat() {
     };
   }
 
-  // Attach file: PDF/TXT/DOCX for RAG context injection
+  // Attach file: read content inline (like Claude/ChatGPT) — no RAG upload needed
   let _attachedFile = null;
+  let _attachedFileContent = null;
   const attachBtn = document.getElementById('attach-btn');
   const attachInput = document.getElementById('attach-file');
   const attachName = document.getElementById('attach-name');
@@ -255,33 +256,26 @@ function bindChat() {
       attachInput.value = '';
       if (file.size > 10 * 1024 * 1024) { showToast('File too large (max 10 MB)', 'error'); return; }
       _attachedFile = file;
-      attachName.textContent = file.name;
-      attachName.style.display = '';
-      // Upload to RAG for context
       const status = document.getElementById('chat-status');
-      if (status) status.textContent = 'Uploading...';
+      if (status) status.textContent = 'Reading file...';
       try {
-        const fd = new FormData();
-        fd.append('file', file);
-        fd.append('title', file.name);
-        fd.append('collection', 'chat-context');
-        const res = await fetch(`${API}/rag/ingest`, {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${state.token}` },
-          body: fd,
+        _attachedFileContent = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = ev => resolve(ev.target.result);
+          reader.onerror = () => reject(new Error('Failed to read file'));
+          reader.readAsText(file, 'utf-8');
         });
-        if (!res.ok) throw new Error('Upload failed');
-        _chatRagCollection = 'chat-context';
-        if (status) status.textContent = 'File ready — will be used as context';
-        setTimeout(() => { const s = document.getElementById('chat-status'); if (s) s.textContent = ''; }, 2500);
+        attachName.textContent = file.name;
+        attachName.style.display = '';
+        if (status) status.textContent = 'File ready — will be sent with your message';
+        setTimeout(() => { const s = document.getElementById('chat-status'); if (s && s.textContent === 'File ready — will be sent with your message') s.textContent = ''; }, 2500);
       } catch {
-        _chatRagCollection = null;
-        if (status) status.textContent = 'Upload failed';
+        _attachedFile = null; _attachedFileContent = null;
+        if (status) status.textContent = 'Could not read file';
         setTimeout(() => { const s = document.getElementById('chat-status'); if (s) s.textContent = ''; }, 3000);
       }
     };
-    // Allow dismissing attachment
-    attachName.onclick = () => { _attachedFile = null; _chatRagCollection = null; attachName.style.display = 'none'; attachName.textContent = ''; };
+    attachName.onclick = () => { _attachedFile = null; _attachedFileContent = null; attachName.style.display = 'none'; attachName.textContent = ''; };
   }
 
   // STT: upload audio file &rarr; transcribe via Whisper
@@ -385,15 +379,68 @@ function bindChat() {
   const modelSel = document.getElementById('model-select');
   if (modelSel) modelSel.addEventListener('change', () => _updateModelBadge(true));
 
-  // Voice chat button
+  // Voice-to-voice: hold to record, release sends to Whisper STT, auto-TTS response
+  let _mediaRecorder = null;
+  let _audioChunks = [];
   const voiceBtn = document.getElementById('voice-chat-btn');
-  if (voiceBtn) voiceBtn.onclick = openVoiceChat;
+  const voiceDot = document.getElementById('voice-live-dot');
+  if (voiceBtn) {
+    voiceBtn.onclick = async () => {
+      if (_mediaRecorder && _mediaRecorder.state === 'recording') {
+        _mediaRecorder.stop();
+        return;
+      }
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        _audioChunks = [];
+        const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/ogg';
+        _mediaRecorder = new MediaRecorder(stream, { mimeType });
+        _mediaRecorder.ondataavailable = ev => { if (ev.data.size > 0) _audioChunks.push(ev.data); };
+        _mediaRecorder.onstop = async () => {
+          stream.getTracks().forEach(t => t.stop());
+          if (voiceDot) voiceDot.style.display = 'none';
+          voiceBtn.style.color = 'var(--accent)';
+          voiceBtn.title = 'Voice Chat — click to record';
+          const blob = new Blob(_audioChunks, { type: mimeType });
+          const fd = new FormData();
+          fd.append('audio', blob, 'voice.' + (mimeType.includes('webm') ? 'webm' : 'ogg'));
+          const status = document.getElementById('chat-status');
+          if (status) status.textContent = 'Transcribing...';
+          try {
+            const res = await fetch('/api/v1/query/speech-to-text', {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${state.token}` },
+              body: fd,
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail?.message || 'STT failed');
+            const inp = document.getElementById('chat-input');
+            inp.value = data.text.trim();
+            inp.style.height = 'auto';
+            inp.style.height = Math.min(inp.scrollHeight, 120) + 'px';
+            if (status) status.textContent = '';
+            window._voiceModeAutoTTS = true;
+            await sendMessage();
+          } catch (err) {
+            if (status) status.textContent = 'Voice error: ' + err.message;
+            setTimeout(() => { const s = document.getElementById('chat-status'); if (s) s.textContent = ''; }, 4000);
+          }
+        };
+        _mediaRecorder.start();
+        if (voiceDot) voiceDot.style.display = 'block';
+        voiceBtn.style.color = 'var(--danger)';
+        voiceBtn.title = 'Recording… click again to stop & send';
+      } catch (err) {
+        showToast('Mic access denied: ' + err.message, 'error');
+      }
+    };
+  }
 }
 
 let _modelDisplayMap = {};
 let _webSearchEnabled = false;
 let _webSearchContext = null;
-let _chatRagCollection = null; // set when a doc is attached for RAG context
+let _kbDocCount = -1; // -1=unchecked, 0=empty, >0=has KB docs
 
 async function loadModelOptions() {
   const sel = document.getElementById('model-select');
@@ -524,22 +571,36 @@ async function sendMessage() {
     _webSearchContext = null;
   }
 
-  // ── RAG document context injection ──────────────────────
-  let _ragSources = [];
-  if (_chatRagCollection) {
+  // ── Inline file context (file content sent directly like Claude/ChatGPT) ──
+  if (_attachedFileContent) {
+    const snippet = _attachedFileContent.slice(0, 24000);
+    const existing = _webSearchContext || '';
+    _webSearchContext = (existing ? existing + '\n\n' : '') +
+      `The user has attached a file named "${_attachedFile ? _attachedFile.name : 'document'}" with the following content:\n\n---\n${snippet}\n---`;
+    // Clear attachment after including in this message
+    _attachedFileContent = null; _attachedFile = null;
+    const an = document.getElementById('attach-name');
+    if (an) { an.style.display = 'none'; an.textContent = ''; }
+  }
+
+  // ── Knowledge-base context (admin-uploaded docs, always-on RAG) ──────────
+  if (_kbDocCount !== 0) {
     try {
-      status.textContent = 'Reading document...';
-      const ragRes = await api('/rag/query', { method: 'POST', body: JSON.stringify({ question: text, collection: _chatRagCollection, top_k: 5, include_sources: true, model: 'auto' }) });
-      if (ragRes.ok) {
-        const ragData = await ragRes.json();
-        _ragSources = ragData.sources || [];
-        if (_ragSources.length > 0) {
-          const ragCtx = _ragSources.map((s, i) =>
-            `[Doc ${i + 1}: ${s.document_title || 'Uploaded document'}]\n${s.chunk_text}`
-          ).join('\n\n');
-          const existing = _webSearchContext || '';
-          _webSearchContext = (existing ? existing + '\n\n' : '') +
-            `The user has uploaded a document. Relevant sections:\n\n${ragCtx}`;
+      if (_kbDocCount < 0) {
+        const chk = await fetch(`${API}/rag/documents`, { headers: { 'Authorization': `Bearer ${state.token}` } });
+        _kbDocCount = chk.ok ? ((await chk.json()).total || 0) : 0;
+      }
+      if (_kbDocCount > 0) {
+        const ragRes = await api('/rag/query', { method: 'POST', body: JSON.stringify({ question: text, collection: 'knowledge-base', top_k: 4, include_sources: true, model: 'auto' }) });
+        if (ragRes.ok) {
+          const ragData = await ragRes.json();
+          const kbSources = (ragData.sources || []).filter(s => (s.relevance_score || 0) > 0.45);
+          if (kbSources.length > 0) {
+            const kbCtx = kbSources.map((s, i) => `[KB ${i + 1}: ${s.document_title || 'Knowledge Base'}]\n${s.chunk_text}`).join('\n\n');
+            const existing = _webSearchContext || '';
+            _webSearchContext = (existing ? existing + '\n\n' : '') +
+              `Relevant context from the campus knowledge base:\n\n${kbCtx}`;
+          }
         }
       }
     } catch (_) { /* non-fatal */ }
@@ -597,6 +658,12 @@ async function sendMessage() {
         : '';
       assistantDiv.dataset.raw = fullContent;
       assistantDiv.innerHTML = formatMd(fullContent) + sourcesHtml + _msgMeta(usedModel, msgIdx);
+      // Auto-TTS for voice mode
+      if (window._voiceModeAutoTTS) {
+        window._voiceModeAutoTTS = false;
+        const ttsBtn = assistantDiv.querySelector('.tts-btn');
+        if (ttsBtn) setTimeout(() => playTTS(fullContent, ttsBtn), 200);
+      }
     } else if (streamError) {
       throw streamError;
     } else {
@@ -625,36 +692,54 @@ function persistSession() {
   saveSessions(sessions);
 }
 
-/* Text-to-Speech: play an assistant message via piper TTS */
+/* Text-to-Speech: server Veena TTS → fallback to browser Web Speech API */
 async function playTTS(text, btn) {
   if (!btn || btn._ttsPlaying) return;
   btn._ttsPlaying = true;
   const origHTML = btn.innerHTML;
+  const pauseHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
   btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="10 15 15 12 10 9 10 15"/></svg>';
   btn.title = 'Generating audio...';
+
+  const cleanText = text.replace(/```[\s\S]*?```/g, '').replace(/[#*`_~\[\]]/g, '').slice(0, 4000);
+
+  const resetBtn = () => { btn.innerHTML = origHTML; btn.title = 'Listen to this response'; btn._ttsPlaying = false; btn.onclick = null; };
+
+  // Try server TTS first (Veena)
   try {
     const res = await api('/query/text-to-speech', {
       method: 'POST',
-      body: JSON.stringify({ text: text.slice(0, 4000), voice: 'default', speed: 1.0, response_format: 'mp3' }),
+      body: JSON.stringify({ text: cleanText, voice: 'default', speed: 1.0, response_format: 'mp3' }),
     });
-    if (!res.ok) {
-      const d = await res.json().catch(() => ({}));
-      throw new Error(d.detail?.message || 'TTS unavailable');
-    }
+    if (!res.ok) throw new Error('server_tts_unavailable');
     const blob = await res.blob();
+    if (blob.size < 100) throw new Error('server_tts_empty');
     const url = URL.createObjectURL(blob);
     const audio = new Audio(url);
-    btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
-    btn.title = 'Playing... (click to stop)';
-    btn.onclick = (e) => { e.stopPropagation(); audio.pause(); };
-    audio.onended = () => { btn.innerHTML = origHTML; btn.title = 'Listen to this response'; btn._ttsPlaying = false; URL.revokeObjectURL(url); btn.onclick = null; };
-    audio.onerror = () => { btn.innerHTML = origHTML; btn.title = 'Listen to this response'; btn._ttsPlaying = false; URL.revokeObjectURL(url); btn.onclick = null; };
+    btn.innerHTML = pauseHTML; btn.title = 'Playing… (click to stop)';
+    btn.onclick = (e) => { e.stopPropagation(); audio.pause(); resetBtn(); URL.revokeObjectURL(url); };
+    audio.onended = () => { resetBtn(); URL.revokeObjectURL(url); };
+    audio.onerror = () => { resetBtn(); URL.revokeObjectURL(url); };
     await audio.play();
-  } catch (err) {
-    btn.innerHTML = origHTML;
-    btn.title = err.message || 'TTS failed';
-    btn._ttsPlaying = false;
-    setTimeout(() => { if (btn) btn.title = 'Listen to this response'; }, 3000);
+    return;
+  } catch (_) { /* fall through to browser TTS */ }
+
+  // Browser Web Speech API fallback — always available
+  if ('speechSynthesis' in window) {
+    window.speechSynthesis.cancel();
+    const utt = new SpeechSynthesisUtterance(cleanText);
+    utt.rate = 1.05; utt.pitch = 1.0; utt.volume = 1.0;
+    const voices = window.speechSynthesis.getVoices();
+    const enVoice = voices.find(v => v.lang.startsWith('en') && !v.name.includes('Google')) || voices.find(v => v.lang.startsWith('en'));
+    if (enVoice) utt.voice = enVoice;
+    btn.innerHTML = pauseHTML; btn.title = 'Playing (browser voice)…';
+    btn.onclick = (e) => { e.stopPropagation(); window.speechSynthesis.cancel(); resetBtn(); };
+    utt.onend = resetBtn;
+    utt.onerror = resetBtn;
+    window.speechSynthesis.speak(utt);
+  } else {
+    showToast('TTS unavailable — no server or browser voice found', 'error');
+    resetBtn();
   }
 }
 

@@ -63,6 +63,7 @@ async def ingest_document(
     content_type: str,
     file_size: int,
     uploaded_by: str,
+    source_tag: str = "general",
 ) -> RAGDocument:
     """Ingest a document: chunk it, generate embeddings, store in DB."""
     _ensure_upload_dir()
@@ -88,11 +89,9 @@ async def ingest_document(
     # Try to generate embeddings and store (best effort — Qdrant optional)
     try:
         if chunks:
-            # Store embeddings via Qdrant if available
-            await _store_embeddings(doc.id, chunks)
+            await _store_embeddings(doc.id, chunks, source_tag=source_tag)
         doc.status = "ready"
     except Exception as e:
-        # If Qdrant is not available, still mark doc but note the error
         doc.status = "ready"
         doc.error_message = f"Embeddings skipped: {str(e)[:200]}"
 
@@ -105,7 +104,7 @@ async def ingest_document(
     return doc
 
 
-async def _store_embeddings(document_id: str, chunks: list[str]):
+async def _store_embeddings(document_id: str, chunks: list[str], source_tag: str = "general"):
     """Store chunk embeddings in Qdrant vector database."""
     try:
         from qdrant_client import QdrantClient
@@ -131,7 +130,12 @@ async def _store_embeddings(document_id: str, chunks: list[str]):
                 PointStruct(
                     id=str(uuid.uuid4()),
                     vector=emb,
-                    payload={"document_id": document_id, "chunk_index": i, "text": chunks[i][:1000]},
+                    payload={
+                        "document_id": document_id,
+                        "chunk_index": i,
+                        "text": chunks[i][:1000],
+                        "source_tag": source_tag,
+                    },
                 )
                 for i, emb in enumerate(embeddings)
             ]
@@ -147,10 +151,12 @@ async def query_rag(
     question: str,
     collection_name: str | None = None,
     top_k: int = 5,
+    source_tag: str | None = None,
 ) -> list[dict]:
-    """Search vector DB for relevant chunks."""
+    """Search vector DB for relevant chunks. source_tag filters by 'knowledge-base' or 'general'."""
     try:
         from qdrant_client import QdrantClient
+        from qdrant_client.models import Filter, FieldCondition, MatchValue
 
         client = QdrantClient(url=settings.qdrant_url, timeout=10)
 
@@ -158,11 +164,19 @@ async def query_rag(
         result = await llm_service.generate_embeddings([question])
         query_vector = result["data"][0]["embedding"]
 
+        # Build optional filter by source_tag
+        query_filter = None
+        if source_tag:
+            query_filter = Filter(
+                must=[FieldCondition(key="source_tag", match=MatchValue(value=source_tag))]
+            )
+
         # Search
         search_result = client.query_points(
             collection_name=settings.qdrant_collection,
             query=query_vector,
             limit=top_k,
+            query_filter=query_filter,
         )
 
         sources = []
