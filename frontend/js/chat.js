@@ -148,7 +148,7 @@ function renderChat() {
             <textarea id="chat-input" placeholder="Message MAC..." rows="1"></textarea>
             <div class="chat-input-actions">
               <div class="chat-input-left">
-                <select id="model-select" class="model-pill"><option value="auto" selected>Auto</option></select>
+                <select id="model-select" class="model-pill" title="Auto: routes by query — math→DeepSeek, code→Coder, chat→Qwen. Pick a model to override."><option value="auto" selected title="Smart routing: math→DeepSeek, code→Coder, analysis→Intel, else→Qwen">Auto ✦</option></select>
                 <button class="chat-btn-icon" id="web-search-btn" title="Web search (SearXNG) — toggle real-time search context" aria-pressed="false">
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
                 </button>
@@ -167,9 +167,9 @@ function renderChat() {
                 </button>
               </div>
               <div class="chat-input-right">
-                <span id="chat-status" class="chat-status-text"></span>
+                <span id="chat-status" class="chat-status-text" title="Token usage estimate (~4 chars = 1 token)"></span>
                 <span id="active-model-badge" class="active-model-badge"></span>
-                <button class="send-btn" id="send-btn" title="Send">
+                <button class="send-btn" id="send-btn" title="Send (Enter)">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
                 </button>
               </div>
@@ -193,12 +193,42 @@ function sessionItem(s) {
   </div>`;
 }
 
+/* ── Shared message meta bar (copy + TTS + model tag) ──── */
+function _msgMeta(modelTag, msgIdx) {
+  const copyBtn = `<button class="copy-msg-btn" title="Copy response" onclick="(function(b){const raw=b.closest('.msg-assistant').dataset.raw||'';navigator.clipboard.writeText(raw).then(()=>{b.title='Copied!';setTimeout(()=>b.title='Copy response',1500)}).catch(()=>{const r=document.createRange();r.selectNode(b.closest('.msg-assistant'));window.getSelection().removeAllRanges();window.getSelection().addRange(r);document.execCommand('copy');window.getSelection().removeAllRanges();})})(this)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>`;
+  const ttsBtn = `<button class="tts-btn" title="Listen to this response"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg></button>`;
+  const modelPart = modelTag ? `<div class="msg-model-tag">answered by ${esc(modelTag)}</div>` : '';
+  return `<div class="msg-meta">${modelPart}${copyBtn}${ttsBtn}</div>`;
+}
+
+/* ── Token counter (live, updates in status bar) ─────── */
+function _updateTokenCount() {
+  const el = document.getElementById('chat-status');
+  if (!el || isStreaming) return;
+  const input = document.getElementById('chat-input');
+  const inputTok = Math.ceil(((input && input.value.length) || 0) / 4);
+  const convTok = currentSession
+    ? currentSession.messages.reduce((s, m) => s + Math.ceil((m.content || '').length / 4), 0)
+    : 0;
+  const total = convTok + inputTok;
+  if (total === 0) { el.textContent = ''; el.style.color = ''; return; }
+  const limit = 4096;
+  const pct = (total / limit) * 100;
+  el.style.color = pct > 85 ? 'var(--danger)' : pct > 65 ? '#f59e0b' : 'var(--muted)';
+  el.textContent = total > 999 ? `~${(total / 1000).toFixed(1)}k/${limit / 1000}k ctx` : `~${total}/${limit} ctx`;
+}
+window._updateTokenCount = _updateTokenCount;
+
 function bindChat() {
   document.getElementById('new-chat-btn').onclick = newChat;
   document.getElementById('send-btn').onclick = sendMessage;
   const input = document.getElementById('chat-input');
   input.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } };
-  input.oninput = () => { input.style.height = 'auto'; input.style.height = Math.min(input.scrollHeight, 120) + 'px'; };
+  input.oninput = () => {
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+    _updateTokenCount();
+  };
 
   // Web search toggle (SearXNG real-time)
   const wsBtn = document.getElementById('web-search-btn');
@@ -427,13 +457,14 @@ function loadSession(id) {
   } else {
     msgs.innerHTML = s.messages.map((m, i) => {
       if (m.role === 'assistant') {
-        return `<div class="msg msg-assistant" data-msg-index="${i}">${formatMd(m.content)}<div class="msg-meta"><button class="tts-btn" title="Listen to this response"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg></button></div></div>`;
+        return `<div class="msg msg-assistant" data-msg-index="${i}" data-raw="${esc(m.content)}">${formatMd(m.content)}${_msgMeta('', i)}</div>`;
       }
       return `<div class="msg msg-user">${esc(m.content)}</div>`;
     }).join('');
     msgs.scrollTop = msgs.scrollHeight;
   }
   if (s.model) document.getElementById('model-select').value = s.model;
+  _updateTokenCount();
 }
 
 function deleteSession(id) {
@@ -564,7 +595,8 @@ async function sendMessage() {
       const sourcesHtml = (_webSources && _webSources.length > 0)
         ? `<div class="msg-sources"><span class="msg-sources-label"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg> Web sources</span>${_webSources.map((r, i) => `<a class="msg-source-chip" href="${esc(r.url)}" target="_blank" rel="noopener" title="${esc(r.url)}">[${i+1}] ${esc((r.title||r.url).slice(0,40))}</a>`).join('')}</div>`
         : '';
-      assistantDiv.innerHTML = formatMd(fullContent) + sourcesHtml + `<div class="msg-meta"><div class="msg-model-tag">answered by ${esc(usedModel)}</div><button class="tts-btn" title="Listen to this response"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg></button></div>`;
+      assistantDiv.dataset.raw = fullContent;
+      assistantDiv.innerHTML = formatMd(fullContent) + sourcesHtml + _msgMeta(usedModel, msgIdx);
     } else if (streamError) {
       throw streamError;
     } else {
@@ -580,7 +612,7 @@ async function sendMessage() {
     persistSession();
   }
   isStreaming = false;
-  status.textContent = '';
+  _updateTokenCount();
   msgs.scrollTop = msgs.scrollHeight;
   const titleEl = document.querySelector(`.session-item[data-id="${currentSession.id}"] span:first-child`);
   if (titleEl) titleEl.textContent = currentSession.title;

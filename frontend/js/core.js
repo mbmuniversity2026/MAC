@@ -310,6 +310,9 @@ function logout() {
   localStorage.removeItem('mac_token');
   if (_notifPollIv) { clearInterval(_notifPollIv); _notifPollIv = null; }
   if (_flagsEs) { try { _flagsEs.close(); } catch {} _flagsEs = null; }
+  // Close admin SSE streams — unclosed EventSource reconnects on 401 and causes "connection error" on re-login
+  if (typeof _activityEs !== 'undefined' && _activityEs) { try { _activityEs.close(); } catch {} window._activityEs = null; }
+  if (typeof _auditEs !== 'undefined' && _auditEs) { try { _auditEs.close(); } catch {} window._auditEs = null; }
   if (typeof _nbState !== 'undefined') { _nbState.notebooks = []; _nbState.current = null; _nbState.cells = []; _nbState.outputs = {}; }
   if (typeof _mbCleanup === 'function') { try { _mbCleanup(); } catch {} }
   state.justLoggedOut = true;

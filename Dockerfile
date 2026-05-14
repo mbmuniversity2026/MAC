@@ -7,7 +7,7 @@ LABEL org.opencontainers.image.authors="mbmuniversity2026 <mbmuniversity2026@gma
 
 WORKDIR /app
 
-# Install system deps (curl + docker CLI + OpenCV headless runtime + insightface ONNX deps)
+# System deps (no docker.io — replaced by static binary below)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     gcc g++ \
@@ -17,8 +17,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxrender1 \
     libxext6 \
     libgomp1 \
-    docker.io \
     && rm -rf /var/lib/apt/lists/*
+
+# Docker CLI static binary — MBM Book spawns per-user containers via docker socket
+RUN curl -fsSL "https://download.docker.com/linux/static/stable/x86_64/docker-26.1.4.tgz" \
+    | tar xz --strip-components=1 -C /usr/local/bin docker/docker \
+    && docker --version
 
 # Install Python deps (insightface builds from source — longer timeout)
 COPY requirements.txt .
