@@ -153,7 +153,7 @@ async function renderAdminOverview() {
             <tbody>
               ${models.map(m => `
                 <tr>
-                  <td><span class="model-tag">${esc(shortModel(m.model))}</span></td>
+                  <td><span class="model-tag">${esc(shortModel(m.model_id || m.model || '?'))}</span></td>
                   <td>${fmtNum(m.requests_today)}</td>
                   <td>${fmtNum(m.tokens_today)}</td>
                   <td>${m.avg_latency_ms || 0}ms</td>
@@ -240,6 +240,16 @@ async function renderAdminOverview() {
     }
 
   } catch (ex) { el.innerHTML = `<div class="error-state"><p>Error: ${esc(ex.message)}</p></div>`; }
+
+  // Real-time refresh every 30s when overview tab is active
+  if (window._adminOverviewTimer) clearInterval(window._adminOverviewTimer);
+  window._adminOverviewTimer = setInterval(() => {
+    if (adminTab === 'overview' && document.getElementById('admin-content')) {
+      renderAdminOverview().catch(() => {});
+    } else {
+      clearInterval(window._adminOverviewTimer);
+    }
+  }, 30000);
 }
 
 async function renderAdminUsers() {
@@ -362,7 +372,7 @@ async function renderAdminModels() {
       <div class="admin-header"><h2>Model Status & Analytics</h2></div>
       <div class="models-grid-admin">
         ${models.map(m => {
-          const s = stats.find(st => st.model === m.id) || {};
+          const s = stats.find(st => (st.model_id || st.model) === m.id) || {};
           return `
           <div class="model-card-admin">
             <div class="model-card-header">

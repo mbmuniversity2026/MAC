@@ -83,8 +83,9 @@ async def terminal_ws(
     docker_exec = shell.startswith("docker:")
     if docker_exec:
         container = shell[7:].strip()
-        cmd = ["docker", "exec", "-it", container, "/bin/sh"]
-        use_pty = False  # docker exec -it handles its own PTY
+        # Use -i (not -t) because WE provide the PTY; docker exec writes to our PTY
+        cmd = ["docker", "exec", "-i", container, "/bin/bash", "--login"]
+        use_pty = _USE_PTY
     else:
         cmd = ["/bin/bash", "--login"]
         use_pty = _USE_PTY

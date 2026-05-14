@@ -402,10 +402,10 @@ async function _loadRoleDashboard(role, me) {
     // Admin gets a quick cluster + top users summary
     const [clusterData, topUsersData] = await Promise.allSettled([
       apiJson('/cluster/nodes', { silent: true }).catch(() => []),
-      apiJson('/usage/admin/all?per_page=5', { silent: true }),
+      apiJson('/usage/admin/top?n=5', { silent: true }),
     ]);
     const nodes = clusterData.status === 'fulfilled' ? (Array.isArray(clusterData.value) ? clusterData.value : (clusterData.value.nodes||[])) : [];
-    const topUsers = topUsersData.status === 'fulfilled' ? (topUsersData.value.users||[]).slice(0,5) : [];
+    const topUsers = topUsersData.status === 'fulfilled' ? (topUsersData.value.users||[]) : [];
 
     sec.innerHTML = `
       <div class="stats-grid stats-3" style="margin-top:16px">

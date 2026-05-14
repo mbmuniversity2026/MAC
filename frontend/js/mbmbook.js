@@ -938,6 +938,8 @@ async function _mbNewFolder() {
 async function _mbUpload(input) {
   const file = input.files[0];
   if (!file) return;
+  // Re-enter fullscreen if it was active before the file dialog forced it off
+  const wasFullscreen = !!document.fullscreenElement;
   const form = new FormData();
   form.append('file', file);
   try {
@@ -953,6 +955,16 @@ async function _mbUpload(input) {
     _mbTermWrite(`\x1b[31mUpload failed: ${e.message}\x1b[0m\r\n`);
   }
   input.value = '';
+  // Restore fullscreen after file dialog exits it
+  if (!document.fullscreenElement) {
+    const el = document.getElementById('mb-root');
+    if (el && el.requestFullscreen) {
+      el.requestFullscreen().catch(() => {
+        const btn = document.getElementById('mb-fs-btn');
+        if (btn) btn.style.display = '';
+      });
+    }
+  }
 }
 
 // ── WebSocket terminal ────────────────────────────────────────

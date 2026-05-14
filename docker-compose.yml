@@ -28,8 +28,8 @@ services:
       - VLLM_BASE_URL=http://vllm-speed:8001
       - VLLM_SPEED_URL=http://vllm-speed:8001
       - VLLM_CODE_URL=http://vllm-speed:8001
-      - VLLM_REASONING_URL=http://vllm-speed:8001
-      - VLLM_INTELLIGENCE_URL=http://vllm-speed:8001
+      - VLLM_REASONING_URL=http://vllm-reason:8003
+      - VLLM_INTELLIGENCE_URL=http://vllm-reason:8003
       - WHISPER_URL=http://whisper:8000
       - TTS_URL=http://tts:8000
       - EMBEDDING_URL=http://vllm-speed:8001
@@ -82,11 +82,11 @@ services:
   #
   # Legacy Docker Desktop (Windows): uncomment `runtime: nvidia` and remove
   # the deploy.resources block if vLLM fails to see the GPU.
+  # GPU budget split: Qwen ~40% (~4.8 GB) + DeepSeek ~40% (~4.8 GB) = ~9.6 GB / 12 GB
   vllm-speed:
     image: vllm/vllm-openai:latest
     container_name: mac-vllm-speed
     profiles: ["gpu"]
-    # runtime: nvidia   # ← uncomment for legacy Docker Desktop (< 4.30)
     ports:
       - "${VLLM_SPEED_PORT:-8001}:${VLLM_SPEED_PORT:-8001}"
     environment:
@@ -101,7 +101,7 @@ services:
     command: >
       --model ${VLLM_SPEED_MODEL:-Qwen/Qwen2.5-7B-Instruct-AWQ}
       --port ${VLLM_SPEED_PORT:-8001}
-      --gpu-memory-utilization ${VLLM_SPEED_GPU_MEM:-0.85}
+      --gpu-memory-utilization ${VLLM_SPEED_GPU_MEM:-0.42}
       --max-model-len ${VLLM_SPEED_MAX_LEN:-4096}
       --trust-remote-code
       --dtype auto
@@ -119,6 +119,56 @@ services:
       timeout: 10s
       retries: 10
       start_period: 240s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    restart: unless-stopped
+    networks:
+      - mac-net
+
+  # ═══════════════════════════════════════════════════════
+  #  vLLM — DeepSeek-R1-Distill-Qwen-7B (4-bit AWQ)
+  #  Reasoning / deep-thinking model alongside Qwen chat
+  #  GPU: ~4.8 GB at 42% utilization
+  # ═══════════════════════════════════════════════════════
+  vllm-reason:
+    image: vllm/vllm-openai:latest
+    container_name: mac-vllm-reason
+    profiles: ["gpu"]
+    ports:
+      - "${VLLM_REASON_PORT:-8003}:${VLLM_REASON_PORT:-8003}"
+    environment:
+      - HF_HOME=/root/.cache/huggingface
+      - HF_TOKEN=${HF_TOKEN:-}
+      - TRANSFORMERS_OFFLINE=${TRANSFORMERS_OFFLINE:-0}
+      - HF_HUB_OFFLINE=${TRANSFORMERS_OFFLINE:-0}
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    volumes:
+      - hf-cache:/root/.cache/huggingface
+    command: >
+      --model ${VLLM_REASON_MODEL:-solidrust/DeepSeek-R1-Distill-Qwen-7B-AWQ}
+      --port ${VLLM_REASON_PORT:-8003}
+      --gpu-memory-utilization ${VLLM_REASON_GPU_MEM:-0.42}
+      --max-model-len ${VLLM_REASON_MAX_LEN:-8192}
+      --trust-remote-code
+      --dtype auto
+      --served-model-name ${VLLM_REASON_SERVED_NAME:-deepseek-r1-7b}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:${VLLM_REASON_PORT:-8003}/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 300s
     logging:
       driver: "json-file"
       options:
@@ -304,6 +354,30 @@ services:
         max-size: "10m"
         max-file: "3"
     restart: unless-stopped
+    networks:
+      - mac-net
+
+  # ── MAC Watchdog ─────────────────────────────────────────────
+  # Monitors all containers, fixes docker socket perms, reloads nginx
+  watchdog:
+    image: python:3.11-slim
+    container_name: mac-watchdog
+    restart: unless-stopped
+    volumes:
+      - ./watchdog.py:/app/watchdog.py:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./watchdog.log:/app/watchdog.log
+      - ./docker-compose.yml:/app/docker-compose.yml:ro
+    working_dir: /app
+    entrypoint: >
+      sh -c "pip install -q requests 2>/dev/null; apt-get install -y -qq docker.io 2>/dev/null || true; python watchdog.py"
+    environment:
+      - DOCKER_API_VERSION=1.43
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
     networks:
       - mac-net
 

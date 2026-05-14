@@ -609,12 +609,13 @@ async function renderAdminTerminal() {
 
 async function _termLoadLibs() {
   if (window.Terminal) return true;
+  // xterm is pre-loaded in index.html — if still missing, try once more
   try {
-    await Promise.all([
-      _dynStyle('/static/libs/xterm.css'),
-      _dynScript('/static/libs/xterm.min.js'),
-    ]);
+    await _dynStyle('/static/libs/xterm.css');
+    await _dynScript('/static/libs/xterm.min.js');
     await _dynScript('/static/libs/xterm-addon-fit.min.js');
+    // Give a tick for UMD global assignment
+    await new Promise(r => setTimeout(r, 50));
     return !!window.Terminal;
   } catch { return false; }
 }

@@ -164,3 +164,44 @@ async def admin_models_usage(
         ))
 
     return AdminModelsResponse(models=models)
+
+
+@router.get("/admin/top")
+async def admin_top_users(
+    n: int = Query(5, ge=1, le=20),
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Top N users by tokens consumed today — for real-time dashboard ranking."""
+    from sqlalchemy import select, func
+    from mac.models.user import UsageLog, User as _User
+    from mac.services.usage_service import _today_start
+
+    today = _today_start()
+    result = await db.execute(
+        select(
+            _User.name,
+            _User.roll_number,
+            _User.department,
+            func.coalesce(func.sum(UsageLog.tokens_in + UsageLog.tokens_out), 0).label("tokens_today"),
+            func.count(UsageLog.id).label("requests_today"),
+        )
+        .join(UsageLog, UsageLog.user_id == _User.id, isouter=True)
+        .where(UsageLog.created_at >= today)
+        .group_by(_User.id, _User.name, _User.roll_number, _User.department)
+        .order_by(func.sum(UsageLog.tokens_in + UsageLog.tokens_out).desc())
+        .limit(n)
+    )
+    rows = result.all()
+    return {
+        "users": [
+            {
+                "name": r.name,
+                "roll_number": r.roll_number,
+                "department": r.department,
+                "tokens_today": int(r.tokens_today),
+                "requests_today": int(r.requests_today),
+            }
+            for r in rows
+        ]
+    }

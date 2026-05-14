@@ -35,42 +35,7 @@ async def chat(
     """Chat completion — multi-turn conversation. OpenAI-compatible."""
     messages = [{"role": m.role, "content": m.content} for m in body.messages]
 
-    # ── Gundi easter egg — short-circuit the LLM entirely ───
-    _gundi_check = " ".join(
-        (m["content"] or "") for m in messages if m.get("role") == "user"
-    ).lower()
-    if "gundi" in _gundi_check:
-        import time as _time
-        _gundi_reply = "Gundi is Aaryan 😎 Gang babes: Preet, Poo, Yashi, GundAaryan 🔥"
-        if body.stream:
-            async def _gundi_stream():
-                _chunk = json.dumps({
-                    "id": generate_request_id("mac-gundi"),
-                    "object": "chat.completion.chunk",
-                    "created": int(_time.time()),
-                    "model": body.model,
-                    "choices": [{"index": 0, "delta": {"role": "assistant", "content": _gundi_reply}, "finish_reason": None}],
-                })
-                yield f"data: {_chunk}\n\n"
-                _done = json.dumps({
-                    "id": generate_request_id("mac-gundi"),
-                    "object": "chat.completion.chunk",
-                    "created": int(_time.time()),
-                    "model": body.model,
-                    "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
-                })
-                yield f"data: {_done}\n\n"
-                yield "data: [DONE]\n\n"
-            return StreamingResponse(_gundi_stream(), media_type="text/event-stream")
-        from mac.schemas.chat import ChatResponse, ChatChoice, ChatMessage as _CM, UsageInfo
-        return ChatResponse(
-            id=generate_request_id("mac-gundi"),
-            object="chat.completion",
-            created=int(_time.time()),
-            model=body.model,
-            choices=[ChatChoice(index=0, message=_CM(role="assistant", content=_gundi_reply), finish_reason="stop")],
-            usage=UsageInfo(prompt_tokens=5, completion_tokens=15, total_tokens=20),
-        )
+
 
     # ── Guardrails: check input ──────────────────────────
     user_text = " ".join(m["content"] for m in messages if m.get("role") == "user")
