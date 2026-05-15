@@ -102,7 +102,7 @@ services:
     command: >
       --model ${VLLM_SPEED_MODEL:-Qwen/Qwen2.5-7B-Instruct-AWQ}
       --port ${VLLM_SPEED_PORT:-8001}
-      --gpu-memory-utilization ${VLLM_SPEED_GPU_MEM:-0.42}
+      --gpu-memory-utilization ${VLLM_SPEED_GPU_MEM:-0.80}
       --max-model-len ${VLLM_SPEED_MAX_LEN:-4096}
       --trust-remote-code
       --dtype auto
@@ -137,7 +137,7 @@ services:
   vllm-reason:
     image: vllm/vllm-openai:latest
     container_name: mac-vllm-reason
-    profiles: ["gpu"]
+    profiles: ["gpu-reason"]
     ports:
       - "${VLLM_REASON_PORT:-8003}:${VLLM_REASON_PORT:-8003}"
     environment:

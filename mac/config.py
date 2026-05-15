@@ -95,7 +95,7 @@ class Settings(BaseSettings):
     mac_auto_fallback: str = ""
 
     # Default max_tokens for chat/completion when the client doesn't specify.
-    mac_default_max_tokens: int = 2048
+    mac_default_max_tokens: int = 1024
 
     # Auto-download open-source model weights from Hugging Face cache.
     # Triggered on first real app use when enabled.

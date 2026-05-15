@@ -221,9 +221,14 @@ window._updateTokenCount = _updateTokenCount;
 
 function bindChat() {
   document.getElementById('new-chat-btn').onclick = newChat;
-  document.getElementById('send-btn').onclick = sendMessage;
+  document.getElementById('send-btn').onclick = () => {
+    if (isStreaming && _currentStreamAbort) { _currentStreamAbort.abort(); }
+    else if (!isStreaming) { sendMessage(); }
+  };
   const input = document.getElementById('chat-input');
-  input.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } };
+  input.onkeydown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (!isStreaming) sendMessage(); }
+  };
   input.oninput = () => {
     input.style.height = 'auto';
     input.style.height = Math.min(input.scrollHeight, 120) + 'px';
@@ -243,8 +248,6 @@ function bindChat() {
   }
 
   // Attach file: read content inline (like Claude/ChatGPT) — no RAG upload needed
-  let _attachedFile = null;
-  let _attachedFileContent = null;
   const attachBtn = document.getElementById('attach-btn');
   const attachInput = document.getElementById('attach-file');
   const attachName = document.getElementById('attach-name');
@@ -441,6 +444,12 @@ let _modelDisplayMap = {};
 let _webSearchEnabled = false;
 let _webSearchContext = null;
 let _kbDocCount = -1; // -1=unchecked, 0=empty, >0=has KB docs
+let _currentStreamAbort = null;
+let _attachedFile = null;
+let _attachedFileContent = null;
+
+const _SEND_ICON = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>';
+const _STOP_ICON = '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="3"/></svg>';
 
 async function loadModelOptions() {
   const sel = document.getElementById('model-select');
@@ -536,7 +545,8 @@ async function sendMessage() {
   const msgs = document.getElementById('chat-messages');
   const emptyEl = msgs.querySelector('.chat-empty');
   if (emptyEl) emptyEl.remove();
-  msgs.innerHTML += `<div class="msg msg-user">${esc(text)}</div>`;
+  // insertAdjacentHTML preserves existing DOM nodes (innerHTML += would destroy them all)
+  msgs.insertAdjacentHTML('beforeend', `<div class="msg msg-user">${esc(text)}</div>`);
   input.value = ''; input.style.height = 'auto';
 
   const assistantDiv = document.createElement('div');
@@ -547,13 +557,16 @@ async function sendMessage() {
   startMacThinking(assistantDiv);
 
   const status = document.getElementById('chat-status');
+  const sendBtn = document.getElementById('send-btn');
   isStreaming = true;
+  _currentStreamAbort = new AbortController();
+  if (sendBtn) { sendBtn.innerHTML = _STOP_ICON; sendBtn.title = 'Stop generating'; }
 
   // ── Web search context injection (SearXNG) ───────────────
   let _webSources = [];
   if (_webSearchEnabled) {
     try {
-      status.textContent = 'Searching web...';
+      if (status) status.textContent = 'Searching web...';
       const searchRes = await api('/search/web', { method: 'POST', body: JSON.stringify({ query: text, num_results: 5 }) });
       if (searchRes.ok) {
         const searchData = await searchRes.json();
@@ -562,7 +575,6 @@ async function sendMessage() {
           const ctx = _webSources.map((r, i) =>
             `[${i + 1}] ${r.title}\nURL: ${r.url}\n${r.snippet || r.content || ''}`
           ).join('\n\n');
-          // Inject as system context that will prepend this conversation
           _webSearchContext = `You have access to the following real-time web search results for the user's query. Use them to give an accurate, up-to-date answer. Cite sources with [1], [2] etc.\n\n${ctx}`;
         }
       }
@@ -577,7 +589,6 @@ async function sendMessage() {
     const existing = _webSearchContext || '';
     _webSearchContext = (existing ? existing + '\n\n' : '') +
       `The user has attached a file named "${_attachedFile ? _attachedFile.name : 'document'}" with the following content:\n\n---\n${snippet}\n---`;
-    // Clear attachment after including in this message
     _attachedFileContent = null; _attachedFile = null;
     const an = document.getElementById('attach-name');
     if (an) { an.style.display = 'none'; an.textContent = ''; }
@@ -606,14 +617,18 @@ async function sendMessage() {
     } catch (_) { /* non-fatal */ }
   }
 
-  status.textContent = 'Generating...';
+  if (status) status.textContent = 'Generating...';
 
   try {
     const apiMessages = currentSession.messages.map(m => ({ role: m.role, content: m.content }));
     if (_webSearchContext) {
       apiMessages.unshift({ role: 'system', content: _webSearchContext });
     }
-    const res = await api('/query/chat', { method: 'POST', body: JSON.stringify({ messages: apiMessages, model, stream: true }) });
+    const res = await api('/query/chat', {
+      method: 'POST',
+      body: JSON.stringify({ messages: apiMessages, model, stream: true }),
+      signal: _currentStreamAbort.signal,
+    });
     if (!res.ok) { const err = await res.json(); throw new Error(err.detail?.message || 'Request failed'); }
 
     let fullContent = '';
@@ -637,52 +652,71 @@ async function sendMessage() {
           if (data === '[DONE]') continue;
           try {
             const chunk = JSON.parse(data);
-            if (chunk.error) throw new Error(chunk.error.message);
+            if (chunk.error) throw new Error(chunk.error.message || 'Stream error');
             if (chunk.model && !_streamedModel) _streamedModel = chunk.model;
             const delta = chunk.choices?.[0]?.delta?.content || '';
             if (delta) { fullContent += delta; assistantDiv.innerHTML = formatMd(fullContent); msgs.scrollTop = msgs.scrollHeight; }
-          } catch (parseErr) { if (parseErr.message.includes('Backend') || parseErr.message.includes('model')) throw parseErr; }
+          } catch (parseErr) {
+            const pmsg = parseErr?.message || '';
+            if (pmsg.includes('Backend') || pmsg.includes('model')) throw parseErr;
+          }
         }
       }
-    } catch (streamErr) {
-      streamError = streamErr;
+    } catch (err) {
+      streamError = err;
+      try { reader.cancel(); } catch (_) {}
     }
+
+    const wasAborted = streamError?.name === 'AbortError';
     if (fullContent) {
-      currentSession.messages.push({ role: 'assistant', content: fullContent });
-      persistSession();
+      if (currentSession) { currentSession.messages.push({ role: 'assistant', content: fullContent }); persistSession(); }
       const usedModel = shortModel(_streamedModel || (model !== 'auto' ? model : 'MAC'));
-      const msgIdx = currentSession.messages.length - 1;
+      const msgIdx = currentSession ? currentSession.messages.length - 1 : 0;
       assistantDiv.dataset.msgIndex = msgIdx;
       const sourcesHtml = (_webSources && _webSources.length > 0)
         ? `<div class="msg-sources"><span class="msg-sources-label"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg> Web sources</span>${_webSources.map((r, i) => `<a class="msg-source-chip" href="${esc(r.url)}" target="_blank" rel="noopener" title="${esc(r.url)}">[${i+1}] ${esc((r.title||r.url).slice(0,40))}</a>`).join('')}</div>`
         : '';
       assistantDiv.dataset.raw = fullContent;
       assistantDiv.innerHTML = formatMd(fullContent) + sourcesHtml + _msgMeta(usedModel, msgIdx);
-      // Auto-TTS for voice mode
-      if (window._voiceModeAutoTTS) {
+      if (wasAborted) assistantDiv.innerHTML += `<div style="color:var(--muted);font-size:.8rem;margin-top:4px">— stopped —</div>`;
+      if (window._voiceModeAutoTTS && !wasAborted) {
         window._voiceModeAutoTTS = false;
         const ttsBtn = assistantDiv.querySelector('.tts-btn');
         if (ttsBtn) setTimeout(() => playTTS(fullContent, ttsBtn), 200);
       }
-    } else if (streamError) {
+    } else if (streamError && !wasAborted) {
       throw streamError;
-    } else {
+    } else if (!streamError) {
       fullContent = '(No response)';
-      currentSession.messages.push({ role: 'assistant', content: fullContent });
-      persistSession();
+      if (currentSession) { currentSession.messages.push({ role: 'assistant', content: fullContent }); persistSession(); }
       assistantDiv.innerHTML = formatMd(fullContent);
+    } else {
+      // aborted with no content
+      assistantDiv.innerHTML = `<span style="color:var(--muted);font-size:.85rem">Stopped.</span>`;
     }
   } catch (err) {
     stopMacThinking(assistantDiv);
-    assistantDiv.innerHTML = `<span style="color:var(--danger)">Error: ${esc(err.message)}</span>`;
-    currentSession.messages.push({ role: 'assistant', content: `Error: ${err.message}` });
-    persistSession();
+    const errMsg = err?.message || String(err) || 'Unknown error';
+    if (err?.name !== 'AbortError') {
+      assistantDiv.innerHTML = `<span style="color:var(--danger)">Error: ${esc(errMsg)}</span>`;
+      if (currentSession) { currentSession.messages.push({ role: 'assistant', content: `Error: ${errMsg}` }); persistSession(); }
+    } else {
+      assistantDiv.innerHTML = `<span style="color:var(--muted);font-size:.85rem">Stopped.</span>`;
+    }
+  } finally {
+    // Always restore state — this runs even if catch block itself throws
+    isStreaming = false;
+    _currentStreamAbort = null;
+    if (sendBtn) { sendBtn.innerHTML = _SEND_ICON; sendBtn.title = 'Send (Enter)'; }
+    if (status) status.textContent = '';
+    _updateTokenCount();
+    const liveMsgs = document.getElementById('chat-messages');
+    if (liveMsgs) liveMsgs.scrollTop = liveMsgs.scrollHeight;
+    if (currentSession) {
+      const titleEl = document.querySelector(`.session-item[data-id="${currentSession.id}"] span:first-child`);
+      if (titleEl) titleEl.textContent = currentSession.title;
+    }
   }
-  isStreaming = false;
-  _updateTokenCount();
-  msgs.scrollTop = msgs.scrollHeight;
-  const titleEl = document.querySelector(`.session-item[data-id="${currentSession.id}"] span:first-child`);
-  if (titleEl) titleEl.textContent = currentSession.title;
 }
 
 function persistSession() {
